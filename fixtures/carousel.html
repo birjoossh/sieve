@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Shopcast — Featured products carousel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        color: #111;
+        background: #fafafa;
+        margin: 0;
+        padding: 32px 24px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 16px 0;
+        font-weight: 600;
+      }
+      /* Horizontal track — a classic e-commerce "featured" rail. */
+      .carousel-track {
+        display: flex;
+        flex-direction: row;
+        gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 8px;
+        scroll-snap-type: x mandatory;
+      }
+      .card {
+        flex: 0 0 220px;
+        scroll-snap-align: start;
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .card .thumb {
+        height: 120px;
+        background: #eaeef2;
+        border-radius: 6px;
+        margin-bottom: 8px;
+      }
+      .card .title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .card .price {
+        margin: 4px 0 0 0;
+        font-size: 13px;
+        color: #57606a;
+      }
+      .card .badge {
+        font-size: 11px;
+        color: #1f883d;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Featured products</h1>
+    </header>
+
+    <!-- A scrollable row of 10 product cards. The detect heuristic should
+         pick `.carousel-track` as the outer container: it has 10 same-
+         signature children, all rich, beating any other candidate
+         (the body has 2 immediate children — header + section — below the
+         minimum group size; .meta inside a card has only 2 spans). -->
+    <section class="carousel">
+      <div class="carousel-track" data-track="featured">
+        <article class="card" data-id="p-001">
+          <div class="thumb"></div>
+          <h2 class="title">Linen Bucket Hat</h2>
+          <p class="price">$28.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-002">
+          <div class="thumb"></div>
+          <h2 class="title">Canvas Tote</h2>
+          <p class="price">$36.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-003">
+          <div class="thumb"></div>
+          <h2 class="title">Wool Beanie</h2>
+          <p class="price">$24.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-004">
+          <div class="thumb"></div>
+          <h2 class="title">Leather Card Wallet</h2>
+          <p class="price">$45.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-005">
+          <div class="thumb"></div>
+          <h2 class="title">Glass Tumbler</h2>
+          <p class="price">$18.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-006">
+          <div class="thumb"></div>
+          <h2 class="title">Cotton Crew Socks</h2>
+          <p class="price">$12.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-007">
+          <div class="thumb"></div>
+          <h2 class="title">Ceramic Mug</h2>
+          <p class="price">$22.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-008">
+          <div class="thumb"></div>
+          <h2 class="title">Linen Pouch</h2>
+          <p class="price">$16.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-009">
+          <div class="thumb"></div>
+          <h2 class="title">Suede Notebook</h2>
+          <p class="price">$32.00 <span class="badge">In stock</span></p>
+        </article>
+        <article class="card" data-id="p-010">
+          <div class="thumb"></div>
+          <h2 class="title">Brass Bookmark</h2>
+          <p class="price">$9.00 <span class="badge">In stock</span></p>
+        </article>
+      </div>
+    </section>
+  </body>
+</html>

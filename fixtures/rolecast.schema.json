@@ -1,0 +1,15 @@
+{
+  "_comment": "Hand-written Schema for fixtures/rolecast.html — Slice 1's stand-in for what the LLM will produce in Slice 3. The runtime copy is baked into content/schema-stub.ts; this JSON is documentation + a single source of truth for the test gates.",
+  "fingerprint": "fixture:rolecast:v1",
+  "layout": "list",
+  "itemSetSelector": ".joblist",
+  "itemSelector": ".joblist > .job",
+  "fields": {
+    "title": { "kind": "text", "selector": ".title" },
+    "company": { "kind": "text", "selector": ".company" },
+    "location": { "kind": "text", "selector": ".location" },
+    "snippet": { "kind": "text", "selector": ".snippet" }
+  },
+  "source": "stub",
+  "discoveredAt": 0
+}

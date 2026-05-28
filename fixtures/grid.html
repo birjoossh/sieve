@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Coursemap — Course catalog grid</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        color: #111;
+        background: #fafafa;
+        margin: 0;
+        padding: 32px 24px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 16px 0;
+        font-weight: 600;
+      }
+      /* Classic 4-column course catalog grid. detect should pick `.cs-grid`:
+         it has 12 same-signature children (`article.tile`), all rich. The
+         body has 2 children — header + section — below MIN_GROUP_SIZE; the
+         tile's inner `.meta` has only 2 spans, also below threshold. */
+      .cs-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+      }
+      .tile {
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .tile .cover {
+        height: 110px;
+        background: #eaeef2;
+        border-radius: 6px;
+        margin-bottom: 8px;
+      }
+      .tile .title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .tile .meta {
+        margin: 4px 0 0 0;
+        font-size: 12px;
+        color: #57606a;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Course catalog</h1>
+    </header>
+
+    <section class="catalog">
+      <div class="cs-grid" data-grid="catalog">
+        <article class="tile" data-id="c-001">
+          <div class="cover"></div>
+          <h2 class="title">Intro to Algorithms</h2>
+          <p class="meta"><span class="dept">CS</span> · <span class="level">100</span></p>
+        </article>
+        <article class="tile" data-id="c-002">
+          <div class="cover"></div>
+          <h2 class="title">Linear Algebra</h2>
+          <p class="meta"><span class="dept">MATH</span> · <span class="level">200</span></p>
+        </article>
+        <article class="tile" data-id="c-003">
+          <div class="cover"></div>
+          <h2 class="title">Operating Systems</h2>
+          <p class="meta"><span class="dept">CS</span> · <span class="level">300</span></p>
+        </article>
+        <article class="tile" data-id="c-004">
+          <div class="cover"></div>
+          <h2 class="title">Discrete Math</h2>
+          <p class="meta"><span class="dept">MATH</span> · <span class="level">200</span></p>
+        </article>
+        <article class="tile" data-id="c-005">
+          <div class="cover"></div>
+          <h2 class="title">Compilers</h2>
+          <p class="meta"><span class="dept">CS</span> · <span class="level">400</span></p>
+        </article>
+        <article class="tile" data-id="c-006">
+          <div class="cover"></div>
+          <h2 class="title">Probability</h2>
+          <p class="meta"><span class="dept">MATH</span> · <span class="level">300</span></p>
+        </article>
+        <article class="tile" data-id="c-007">
+          <div class="cover"></div>
+          <h2 class="title">Databases</h2>
+          <p class="meta"><span class="dept">CS</span> · <span class="level">300</span></p>
+        </article>
+        <article class="tile" data-id="c-008">
+          <div class="cover"></div>
+          <h2 class="title">Numerical Methods</h2>
+          <p class="meta"><span class="dept">MATH</span> · <span class="level">400</span></p>
+        </article>
+        <article class="tile" data-id="c-009">
+          <div class="cover"></div>
+          <h2 class="title">Computer Networks</h2>
+          <p class="meta"><span class="dept">CS</span> · <span class="level">300</span></p>
+        </article>
+        <article class="tile" data-id="c-010">
+          <div class="cover"></div>
+          <h2 class="title">Real Analysis</h2>
+          <p class="meta"><span class="dept">MATH</span> · <span class="level">400</span></p>
+        </article>
+        <article class="tile" data-id="c-011">
+          <div class="cover"></div>
+          <h2 class="title">Distributed Systems</h2>
+          <p class="meta"><span class="dept">CS</span> · <span class="level">400</span></p>
+        </article>
+        <article class="tile" data-id="c-012">
+          <div class="cover"></div>
+          <h2 class="title">Graph Theory</h2>
+          <p class="meta"><span class="dept">MATH</span> · <span class="level">300</span></p>
+        </article>
+      </div>
+    </section>
+  </body>
+</html>

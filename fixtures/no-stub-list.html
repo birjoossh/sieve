@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>No-stub list — discover wire-up test fixture</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; margin: 24px; }
+      .feed { display: flex; flex-direction: column; gap: 12px; }
+      .card { border: 1px solid #ccc; padding: 12px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <!-- Fixture for the Slice-3 production wire-up: no .joblist (so
+         pickStubSchema returns null), but a clear repeated-structure
+         item-set (`.feed > .card`) so detect() picks the container
+         and tryDiscover() fires through the SW round-trip. -->
+    <main class="feed">
+      <article class="card"><h2>Card 1</h2><p>Stable phrase.</p></article>
+      <article class="card"><h2>Card 2</h2><p>Mandatory Mandarin language.</p></article>
+      <article class="card"><h2>Card 3</h2><p>Stable phrase.</p></article>
+      <article class="card"><h2>Card 4</h2><p>Mandatory Mandarin language.</p></article>
+      <article class="card"><h2>Card 5</h2><p>Stable phrase.</p></article>
+    </main>
+  </body>
+</html>

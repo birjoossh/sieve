@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Rolecast — Open roles</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        color: #111;
+        background: #fafafa;
+        margin: 0;
+        padding: 32px 24px;
+        max-width: 760px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 16px 0;
+        font-weight: 600;
+      }
+      .joblist {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .job {
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 14px 16px;
+      }
+      .job .title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .job .company {
+        margin: 2px 0 8px 0;
+        font-size: 13px;
+        color: #57606a;
+      }
+      .job .meta {
+        display: flex;
+        gap: 12px;
+        font-size: 12px;
+        color: #57606a;
+        margin-bottom: 8px;
+      }
+      .job .snippet {
+        margin: 0;
+        font-size: 13px;
+        color: #24292f;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Open roles</h1>
+    </header>
+
+    <!-- Item-set: 10 job cards. Five contain phrases the Slice-1 test filters
+         against; five are clean. Match plan:
+           Filter A (snippet containsAny ["mandatory Mandarin"])  → cards 1, 3, 5
+           Filter B (snippet containsAny ["unpaid", "no compensation"]) → cards 7, 9
+         Total filtered: 5; passing: 2, 4, 6, 8, 10. -->
+    <main class="joblist" data-list-name="open-roles">
+      <article class="job" data-id="r-001">
+        <h2 class="title">Senior Backend Engineer</h2>
+        <p class="company">Acme Robotics</p>
+        <div class="meta"><span class="location">Shanghai</span><span class="comp">$180k–$220k</span></div>
+        <p class="snippet">Mandatory Mandarin language fluency required to coordinate with the on-site hardware team.</p>
+      </article>
+
+      <article class="job" data-id="r-002">
+        <h2 class="title">Frontend Engineer, Search</h2>
+        <p class="company">Lumen Labs</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$160k–$190k</span></div>
+        <p class="snippet">Own the result-page experience across web and mobile; partner with the ranking team.</p>
+      </article>
+
+      <article class="job" data-id="r-003">
+        <h2 class="title">Localization Engineer</h2>
+        <p class="company">Polyglot Inc.</p>
+        <div class="meta"><span class="location">Singapore</span><span class="comp">$130k–$160k</span></div>
+        <p class="snippet">Mandatory Mandarin and conversational Cantonese to ship the APAC release.</p>
+      </article>
+
+      <article class="job" data-id="r-004">
+        <h2 class="title">Platform SRE</h2>
+        <p class="company">Vault Cloud</p>
+        <div class="meta"><span class="location">Remote (US)</span><span class="comp">$200k–$240k</span></div>
+        <p class="snippet">Run the multi-region control plane; on-call rotation is one week in six.</p>
+      </article>
+
+      <article class="job" data-id="r-005">
+        <h2 class="title">Engineering Manager, Payments</h2>
+        <p class="company">Hexapay</p>
+        <div class="meta"><span class="location">Taipei</span><span class="comp">$210k–$260k</span></div>
+        <p class="snippet">Lead a five-person team. Mandatory Mandarin language for stakeholder reviews in HQ.</p>
+      </article>
+
+      <article class="job" data-id="r-006">
+        <h2 class="title">Data Scientist, Growth</h2>
+        <p class="company">Northwind Analytics</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$170k–$200k</span></div>
+        <p class="snippet">Causal inference on subscription funnels; partner with product on quarterly bets.</p>
+      </article>
+
+      <article class="job" data-id="r-007">
+        <h2 class="title">Open Source Contributor</h2>
+        <p class="company">RustForge Collective</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$0 (volunteer)</span></div>
+        <p class="snippet">Volunteer / unpaid maintainership of two core crates; community-funded swag only.</p>
+      </article>
+
+      <article class="job" data-id="r-008">
+        <h2 class="title">Staff iOS Engineer</h2>
+        <p class="company">Tessellate</p>
+        <div class="meta"><span class="location">London</span><span class="comp">£140k–£170k</span></div>
+        <p class="snippet">Ship the next generation of our drawing engine; mentor a team of four.</p>
+      </article>
+
+      <article class="job" data-id="r-009">
+        <h2 class="title">Research Resident</h2>
+        <p class="company">Open Atlas Institute</p>
+        <div class="meta"><span class="location">Berlin</span><span class="comp">stipend</span></div>
+        <p class="snippet">Twelve-month residency studying low-resource MT. Stipend only — no compensation beyond housing.</p>
+      </article>
+
+      <article class="job" data-id="r-010">
+        <h2 class="title">Security Engineer</h2>
+        <p class="company">Mariner Defense</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$185k–$225k</span></div>
+        <p class="snippet">Threat-model the request path; build detections for our edge gateway.</p>
+      </article>
+    </main>
+  </body>
+</html>

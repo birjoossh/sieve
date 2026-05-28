@@ -1,0 +1,10 @@
+<div class="carousel-track">
+  <article class="card">
+    <div class="thumb"/>
+    <h2 class="title">…</h2>
+    <p class="price">
+      <span class="badge">…</span>
+    </p>
+  </article>
+  … ×9 more <article.card>
+</div>

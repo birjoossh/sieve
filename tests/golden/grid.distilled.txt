@@ -1,0 +1,11 @@
+<div class="cs-grid">
+  <article class="tile">
+    <div class="cover"/>
+    <h2 class="title">…</h2>
+    <p class="meta">
+      <span class="dept">…</span>
+      <span class="level">…</span>
+    </p>
+  </article>
+  … ×11 more <article.tile>
+</div>

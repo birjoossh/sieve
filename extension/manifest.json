@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Negative Filter",
+  "version": "0.0.1",
+  "description": "Hide items that fail your filters from any list / carousel / grid.",
+  "permissions": ["sidePanel", "tabs", "scripting", "alarms", "storage"],
+  "optional_host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "action": {
+    "default_title": "Negative Filter"
+  }
+}

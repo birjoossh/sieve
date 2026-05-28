@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Rolecast — utility class noise variant</title>
+    <style>
+      body { font: 14px/1.4 system-ui, sans-serif; }
+      .joblist { display: flex; flex-direction: column; gap: 12px; }
+      .job { padding: 10px; border: 1px solid #ccc; }
+    </style>
+  </head>
+  <body>
+    <!-- Same structural shape as rolecast.html but every card carries
+         a fresh per-deploy CSS-in-JS class (`css-1abc23`, `_4xy5z`,
+         `Card__a8K2`). 6.2's hardened fingerprint should ignore them
+         and return the same key as rolecast. -->
+    <main class="joblist">
+      <article class="job css-1abc23"><h2 class="title css-2def45">Senior Backend Engineer</h2><p class="company css-co1">Acme</p><div class="meta css-3hij67"><span class="location">Shanghai</span><span class="comp">$180k–$220k</span></div><p class="snippet">Mandatory Mandarin language fluency.</p></article>
+      <article class="job css-1abc24"><h2 class="title css-2def46">Frontend Engineer</h2><p class="company css-co2">Lumen</p><div class="meta css-3hij68"><span class="location">Remote</span><span class="comp">$160k–$190k</span></div><p class="snippet">Own the result page.</p></article>
+      <article class="job _4xy5z"><h2 class="title">Localization Engineer</h2><p class="company">Polyglot</p><div class="meta"><span class="location">Singapore</span><span class="comp">$130k–$160k</span></div><p class="snippet">Mandatory Mandarin and Cantonese.</p></article>
+      <article class="job Card__a8K2"><h2 class="title">Platform SRE</h2><p class="company">Vault</p><div class="meta"><span class="location">Remote (US)</span><span class="comp">$200k–$240k</span></div><p class="snippet">Multi-region control plane.</p></article>
+      <article class="job jsx-12345"><h2 class="title">Engineering Manager</h2><p class="company">Hexapay</p><div class="meta"><span class="location">Taipei</span><span class="comp">$210k–$260k</span></div><p class="snippet">Mandatory Mandarin language.</p></article>
+    </main>
+  </body>
+</html>

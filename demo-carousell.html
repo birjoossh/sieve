@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sieve — Carousell HK mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================
+   Sieve on Carousell HK — a listing GRID.
+   Filtered listings: collapse (default) -> a footprint-preserving
+   PLACEHOLDER cell (grid geometry intact); hide -> display:none.
+   Toggle in the panel. Restore <-> hide per row.
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --cs:#ff5436;
+  --paper:#f3f1ee; --card:#ffffff; --ink:#1c1c1c;
+  --ink-soft:#5f5f5f; --ink-faint:#949494; --line:#e6e4df;
+
+  --panel:#131419; --panel-2:#1b1c22; --panel-3:#22242b; --panel-4:#2b2d35;
+  --pline:#2f313a; --t-bright:#eceae3; --t-mid:#9a9ca6; --t-dim:#696b75;
+
+  --signal:#c9f24e; --exclude:#ff7d63; --deep:#f3b13f;
+
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --disp:'Bricolage Grotesque','IBM Plex Sans',sans-serif;
+}
+html,body{height:100%}
+body{
+  font-family:var(--sans);
+  background:
+    radial-gradient(1100px 560px at 76% -12%, rgba(201,242,78,.07), transparent 70%),
+    radial-gradient(900px 600px at 8% 108%, rgba(243,177,63,.05), transparent 70%),
+    #0c0d10;
+  color:var(--t-bright);
+  display:flex;flex-direction:column;align-items:center;
+  padding:34px 22px 46px;min-height:100%;-webkit-font-smoothing:antialiased;
+}
+
+/* ---------- browser shell ---------- */
+.browser{
+  width:min(1380px,97vw);border-radius:15px;overflow:hidden;background:#1a1b20;
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 40px 90px -30px rgba(0,0,0,.85),
+    0 12px 34px -12px rgba(0,0,0,.6);
+  border:1px solid #34363f;animation:wake .7s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes wake{from{opacity:0;transform:translateY(16px) scale(.992)}to{opacity:1;transform:none}}
+.chrome{display:flex;align-items:center;gap:14px;height:48px;padding:0 15px;
+  background:linear-gradient(180deg,#303239,#282a30);border-bottom:1px solid #15161a}
+.lights{display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#ec6a5e}
+.lights i:nth-child(2){background:#f4be4f}
+.lights i:nth-child(3){background:#61c454}
+.navb{display:flex;gap:3px;margin-left:4px}
+.navb b{width:27px;height:27px;border-radius:7px;display:grid;place-items:center;
+  color:#9fa1aa;font-size:14px}
+.navb b:last-child{color:#6b6d76}
+.url{flex:1;height:30px;border-radius:8px;background:#1c1d22;border:1px solid #15161a;
+  display:flex;align-items:center;gap:9px;padding:0 12px;
+  font-family:var(--mono);font-size:12.5px;color:#c4c6cf}
+.url .lock{color:var(--signal);font-size:11px}
+.url .cf{margin-left:auto;display:flex;align-items:center;gap:5px;
+  font-size:10px;color:#e8923a}
+.url .cf .cfd{width:6px;height:6px;border-radius:50%;background:#e8923a}
+.exticons{display:flex;align-items:center;gap:9px}
+.exticons .puzzle{width:28px;height:28px;border-radius:7px;display:grid;
+  place-items:center;color:#8a8c95;font-size:14px}
+.sieve-ic{position:relative;width:28px;height:28px;border-radius:7px;display:grid;
+  place-items:center;background:radial-gradient(circle at 38% 32%,#2c2f1a,#1a1b15);
+  border:1px solid #4d5430;
+  box-shadow:0 0 0 1px rgba(201,242,78,.13),0 0 14px -3px rgba(201,242,78,.4)}
+.sieve-ic .di{width:13px;height:13px;transform:rotate(45deg);background:var(--signal);
+  border-radius:3px;box-shadow:0 0 9px rgba(201,242,78,.7)}
+.sieve-ic .di::after{content:"";position:absolute;inset:4.5px;background:#1a1b15;
+  border-radius:2px;transform:rotate(45deg)}
+.badge{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;padding:0 3px;
+  border-radius:8px;background:var(--exclude);color:#2a0f08;font-family:var(--mono);
+  font-size:9.5px;font-weight:600;display:grid;place-items:center;border:1.5px solid #282a30}
+
+.viewport{display:flex;height:836px}
+
+/* ============ LEFT : Carousell HK ============ */
+.web{flex:1;display:flex;flex-direction:column;background:var(--paper);
+  color:var(--ink);overflow:hidden}
+.cs-nav{display:flex;align-items:center;gap:16px;height:58px;padding:0 22px;
+  background:var(--card);border-bottom:1px solid var(--line);flex-shrink:0}
+.cs-logo{font-family:var(--disp);font-weight:800;font-size:21px;color:var(--cs);
+  letter-spacing:-.03em}
+.cs-search{flex:1;max-width:480px;height:38px;border-radius:8px;background:var(--paper);
+  border:1px solid var(--line);display:flex;align-items:center;gap:9px;padding:0 13px;
+  font-size:13.5px;color:var(--ink-faint)}
+.cs-search .mag{color:var(--ink-faint);font-size:15px}
+.cs-sell{height:38px;padding:0 18px;border-radius:8px;background:var(--cs);color:#fff;
+  font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:6px}
+.cs-nav .right{display:flex;align-items:center;gap:14px;margin-left:auto}
+.cs-nav .right span{font-size:16px;color:var(--ink-soft)}
+.cs-nav .lang{font-size:12px;font-weight:600;color:var(--ink-soft);
+  border:1px solid var(--line);border-radius:6px;padding:5px 9px}
+.cs-acct{width:30px;height:30px;border-radius:50%;
+  background:linear-gradient(135deg,#f0a07a,#d9683a)}
+
+.cs-cats{display:flex;gap:5px;padding:9px 22px;background:var(--card);
+  border-bottom:1px solid var(--line);flex-shrink:0;overflow:hidden}
+.cs-cat{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);
+  font-weight:500;padding:6px 11px;border-radius:7px;white-space:nowrap}
+.cs-cat:hover{background:var(--paper)}
+.cs-cat.on{background:#fff0ec;color:var(--cs);font-weight:600}
+
+.cs-content{flex:1;overflow-y:auto;padding:18px 22px 40px}
+.cs-content::-webkit-scrollbar{width:11px}
+.cs-content::-webkit-scrollbar-thumb{background:#d6d3cb;border:3px solid var(--paper);border-radius:9px}
+.cs-head{display:flex;align-items:flex-end;gap:13px;margin-bottom:15px;flex-wrap:wrap}
+.cs-head h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
+.cs-head .meta{font-size:12.5px;color:var(--ink-faint);margin-bottom:1px}
+
+.cs-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}
+.cs-grid>*{animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+.cs-grid>*:nth-child(1){animation-delay:.16s}
+.cs-grid>*:nth-child(3){animation-delay:.22s}
+.cs-grid>*:nth-child(5){animation-delay:.28s}
+.cs-grid>*:nth-child(7){animation-delay:.34s}
+.cs-grid>*:nth-child(9){animation-delay:.40s}
+.cs-grid>*:nth-child(11){animation-delay:.46s}
+.cs-grid>*:nth-child(13){animation-delay:.52s}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+.listing{background:var(--card);border:1px solid var(--line);border-radius:11px;
+  overflow:hidden;display:flex;flex-direction:column}
+.listing:hover{border-color:#dad6cc;box-shadow:0 10px 24px -16px rgba(40,32,14,.4);
+  transform:translateY(-2px)}
+.ls-photo{height:138px;display:grid;place-items:center;font-size:42px;position:relative}
+.ls-spot{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:9px;
+  font-weight:600;background:var(--cs);color:#fff;padding:2px 6px;border-radius:4px}
+.ls-like{position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:50%;
+  background:rgba(255,255,255,.9);display:grid;place-items:center;font-size:12px;
+  color:var(--ink-faint)}
+.ls-info{padding:9px 10px 10px;display:flex;flex-direction:column;flex:1}
+.ls-price{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.ls-title{font-size:12px;color:var(--ink-soft);line-height:1.4;margin-top:3px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  min-height:34px}
+.ls-cond{align-self:flex-start;margin-top:6px;font-size:9.5px;color:var(--ink-soft);
+  background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:2px 6px}
+.ls-seller{display:flex;align-items:center;gap:5px;margin-top:8px;
+  padding-top:8px;border-top:1px solid var(--line)}
+.ls-av{width:17px;height:17px;border-radius:50%;background:linear-gradient(135deg,#bcd,#89a);
+  flex-shrink:0}
+.ls-sname{font-size:10.5px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;flex:1}
+.ls-rate{font-family:var(--mono);font-size:9.5px;color:#c8901f;white-space:nowrap}
+.ls-foot{font-size:9.5px;color:var(--ink-faint);margin-top:6px}
+
+/* a FILTERED listing : wrapper holds the placeholder cell + the real listing */
+.filt{display:flex;position:relative}
+.filt>*{flex:1;min-width:0}
+.filt .listing{display:none}
+.filt.restored .listing{display:flex}
+.filt.restored .ctile{display:none}
+.cs-grid.mode-hide .filt:not(.restored){display:none}
+/* a restored item keeps a small in-page re-hide marker */
+.rehide{display:none}
+.filt.restored .rehide{display:inline-flex;align-items:center;gap:4px;
+  position:absolute;top:-9px;right:12px;z-index:4;cursor:pointer;
+  font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.02em;
+  background:var(--signal);color:#1a2207;padding:3px 8px;border-radius:5px;
+  box-shadow:0 3px 8px -3px rgba(0,0,0,.4)}
+.filt.restored .rehide:hover{filter:brightness(1.07)}
+
+/* footprint-preserving placeholder cell — collapse mode, in the grid */
+.ctile{background:#ebe7db;border:1px solid #ddd8c8;border-radius:11px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:18px 12px;gap:9px}
+.ctile:hover{background:#eeeae0}
+.ctile .xd{width:16px;height:16px;background:var(--exclude);transform:rotate(45deg);
+  border-radius:3px;opacity:.9}
+.ctile .ct-reason{font-family:var(--mono);font-size:11px;color:#c14e36;line-height:1.6}
+.ctile .ct-reason .dm{color:#b5841f}
+.ctile .ct-reason .ftag{display:inline-block;background:rgba(255,125,99,.16);color:#b9472f;
+  padding:1px 6px;border-radius:4px;margin-top:4px}
+.ctile .ct-restore{font-family:var(--mono);font-size:9.5px;color:var(--ink-faint);
+  border:1px solid #d0c9b8;border-radius:5px;padding:3px 9px}
+.ctile:hover .ct-restore{color:var(--ink-soft);border-color:#bdb6a2}
+
+.cs-more{text-align:center;margin-top:18px;padding:13px;font-size:13px;
+  color:var(--ink-faint);border:1px dashed var(--line);border-radius:9px}
+
+/* ============ RIGHT : side panel ============ */
+.panel{width:380px;flex-shrink:0;background:var(--panel);border-left:1px solid #000;
+  display:flex;flex-direction:column;position:relative}
+.panel::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  opacity:.035}
+.panel>*{position:relative;z-index:1}
+.p-head{padding:15px 16px 13px;border-bottom:1px solid var(--pline);
+  background:linear-gradient(180deg,#1a1b21,#141519)}
+.p-brand{display:flex;align-items:center;gap:10px}
+.p-brand .mk{width:24px;height:24px;transform:rotate(45deg);border-radius:5px;
+  background:var(--signal);box-shadow:0 0 14px -2px rgba(201,242,78,.6);
+  position:relative;flex-shrink:0}
+.p-brand .mk::after{content:"";position:absolute;inset:6px;background:var(--panel);border-radius:2px}
+.p-brand h2{font-family:var(--disp);font-size:18px;font-weight:700;letter-spacing:.14em}
+.p-brand .gear{margin-left:auto;color:var(--t-dim);font-size:15px}
+.p-sub{font-family:var(--mono);font-size:9.5px;color:var(--t-dim);
+  letter-spacing:.16em;margin:3px 0 11px 34px}
+.p-conn{display:flex;align-items:center;gap:8px;background:var(--panel-3);
+  border:1px solid var(--pline);border-radius:7px;padding:7px 10px;
+  font-family:var(--mono);font-size:11px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--signal);
+  box-shadow:0 0 8px var(--signal);flex-shrink:0;animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.p-conn .host{color:var(--t-bright)}
+.p-conn .en{color:var(--signal);margin-left:auto;font-size:10px;letter-spacing:.04em}
+
+.p-body{flex:1;overflow-y:auto;padding:15px 16px 16px}
+.p-body::-webkit-scrollbar{width:9px}
+.p-body::-webkit-scrollbar-thumb{background:#34363f;border:3px solid var(--panel);border-radius:8px}
+.sec-lab{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10px;
+  letter-spacing:.17em;color:var(--t-dim);margin:4px 0 10px}
+.sec-lab::after{content:"";flex:1;height:1px;background:var(--pline)}
+.sec-lab .ct{color:var(--t-mid);letter-spacing:.04em}
+.p-body section{animation:slidein .6s cubic-bezier(.2,.8,.2,1) both}
+.p-body section:nth-of-type(1){animation-delay:.30s}
+.p-body section:nth-of-type(2){animation-delay:.40s}
+.p-body section:nth-of-type(3){animation-delay:.50s}
+@keyframes slidein{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+
+.pagecard{background:var(--panel-2);border:1px solid var(--pline);border-radius:9px;
+  padding:12px;margin-bottom:18px}
+.pcrow{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.pcrow+.pcrow{margin-top:9px}
+.pcrow .ok{color:var(--signal);font-family:var(--mono);font-size:12px}
+.pcrow .v{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--t-mid)}
+.footprint{margin-top:11px;padding:9px 10px;border-radius:7px;
+  background:rgba(201,242,78,.05);border:1px solid rgba(201,242,78,.16);
+  font-family:var(--mono);font-size:10.5px;color:var(--t-mid);line-height:1.6}
+.footprint b{color:var(--signal);font-weight:500}
+.scope{margin-top:9px;padding:9px 10px;border-radius:7px;
+  background:rgba(232,146,58,.07);border:1px solid rgba(232,146,58,.28);
+  font-family:var(--mono);font-size:10.5px;color:#d39a5e;line-height:1.65}
+.scope b{color:#e8923a;font-weight:500}
+.modesel{display:flex;align-items:center;gap:9px;margin-top:11px}
+.modesel .ml{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;color:var(--t-dim)}
+.modeseg{margin-left:auto;display:flex;background:var(--panel-3);
+  border:1px solid var(--pline);border-radius:7px;padding:2px}
+.modeseg b{font-family:var(--mono);font-size:10px;font-weight:500;padding:5px 11px;
+  border-radius:5px;cursor:pointer;color:var(--t-dim)}
+.modeseg b.on{background:var(--panel-4);color:var(--signal)}
+.fields{margin-top:11px;padding-top:11px;border-top:1px solid var(--pline)}
+.fields .fl{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+  color:var(--t-dim);margin-bottom:7px}
+.fchips{display:flex;flex-wrap:wrap;gap:5px}
+.fchip{font-family:var(--mono);font-size:10.5px;color:var(--t-mid);
+  background:var(--panel-3);border:1px solid var(--pline);border-radius:5px;padding:3px 7px}
+.fchip.deep{color:var(--deep);border-color:rgba(243,177,63,.32);background:rgba(243,177,63,.07)}
+.fchip.used{color:var(--signal);border-color:rgba(201,242,78,.3);background:rgba(201,242,78,.07)}
+
+.filter{background:var(--panel-2);border:1px solid var(--pline);border-radius:9px;
+  padding:12px;margin-bottom:10px}
+.filter.exclude{border-left:2.5px solid var(--exclude)}
+.f-head{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.pill{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.08em;
+  padding:3px 7px;border-radius:4px}
+.pill.ex{background:rgba(255,125,99,.15);color:var(--exclude)}
+.f-field{font-size:13px;font-weight:600;color:var(--t-bright)}
+.f-cond{font-family:var(--mono);font-size:10.5px;color:var(--t-dim);margin-left:auto}
+.phrases{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.phrase{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;
+  color:var(--t-bright);background:var(--panel-3);
+  border:1px solid rgba(201,242,78,.28);border-radius:6px;padding:4px 4px 4px 8px}
+.phrase x{color:var(--t-dim);font-style:normal;cursor:pointer;width:14px;height:14px;
+  display:grid;place-items:center;border-radius:3px}
+.phrase x:hover{background:var(--panel-4);color:var(--exclude)}
+.addp{font-family:var(--mono);font-size:11px;color:var(--t-dim);
+  border:1px dashed var(--pline);border-radius:6px;padding:4px 9px}
+.valbox{margin-bottom:10px}
+.valbox .num{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--t-bright)}
+.valbox .num .st{color:#e0a52e;font-size:16px}
+.valbox .num small{font-size:11px;color:var(--t-dim);font-weight:400}
+.track{height:4px;border-radius:3px;background:var(--panel-4);margin-top:8px;position:relative}
+.track .fillb{position:absolute;left:0;top:0;bottom:0;width:78%;
+  background:var(--exclude);border-radius:3px}
+.track .knob{position:absolute;left:78%;top:50%;width:13px;height:13px;
+  background:var(--t-bright);border-radius:50%;transform:translate(-50%,-50%);
+  border:2px solid var(--panel-2)}
+.track-lab{display:flex;justify-content:space-between;font-family:var(--mono);
+  font-size:9px;color:var(--t-dim);margin-top:6px}
+.valchip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);
+  font-size:12px;color:var(--exclude);background:rgba(255,125,99,.1);
+  border:1px solid rgba(255,125,99,.28);border-radius:6px;padding:5px 9px;margin-bottom:10px}
+.controls{display:flex;align-items:center;gap:6px;padding-top:9px;border-top:1px solid var(--pline)}
+.ctl{display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);
+  font-size:10px;color:var(--t-dim);border:1px solid var(--pline);border-radius:6px;
+  padding:4px 7px;background:var(--panel-3);user-select:none}
+.ctl .sw{width:20px;height:11px;border-radius:7px;background:var(--panel-4);
+  position:relative;transition:.18s;flex-shrink:0}
+.ctl .sw::after{content:"";position:absolute;top:1.5px;left:1.5px;width:8px;height:8px;
+  border-radius:50%;background:#7d808b;transition:.18s}
+.ctl.on{color:var(--deep);border-color:rgba(243,177,63,.4)}
+.ctl.on .sw{background:rgba(243,177,63,.35)}
+.ctl.on .sw::after{left:10.5px;background:var(--deep)}
+.ctl.regex.on{color:var(--signal);border-color:rgba(201,242,78,.4)}
+.ctl.regex.on .sw{background:rgba(201,242,78,.3)}
+.ctl.regex.on .sw::after{background:var(--signal)}
+.removed{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--exclude)}
+.removed b{font-weight:600}
+.save{display:flex;align-items:center;gap:5px;cursor:pointer;font-family:var(--mono);
+  font-size:10px;color:var(--t-dim);border:1px solid var(--pline);border-radius:6px;
+  padding:4px 7px;background:var(--panel-3)}
+.save .pin{font-size:11px}
+.save.saved{color:var(--signal);border-color:rgba(201,242,78,.4);background:rgba(201,242,78,.07)}
+.newfilter{width:100%;margin-top:4px;font-family:var(--mono);font-size:11.5px;
+  color:var(--t-mid);border:1px dashed var(--pline);border-radius:8px;padding:11px;
+  background:transparent;text-align:center;cursor:pointer}
+.newfilter:hover{border-color:var(--t-dim);color:var(--t-bright)}
+
+/* HIDDEN list */
+.h-intro{font-family:var(--mono);font-size:10px;color:var(--t-dim);line-height:1.6;
+  margin-bottom:10px}
+.h-intro .restore-all{color:var(--signal);cursor:pointer;text-decoration:underline;
+  text-underline-offset:2px}
+.hrow{display:flex;align-items:center;gap:9px;background:var(--panel-2);
+  border:1px solid var(--pline);border-left:2px solid var(--exclude);
+  border-radius:8px;padding:8px 9px}
+.hrow+.hrow{margin-top:6px}
+.hrow .hx{width:11px;height:11px;background:var(--exclude);transform:rotate(45deg);
+  border-radius:2px;flex-shrink:0}
+.hrow .hmain{flex:1;min-width:0}
+.hrow .htitle{font-size:11.5px;color:var(--t-bright);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.hrow .hreason{font-family:var(--mono);font-size:9.5px;color:var(--exclude);margin-top:2px}
+.hrow .hreason .dm{color:var(--deep)}
+.hrestore{font-family:var(--mono);font-size:9.5px;color:var(--t-dim);cursor:pointer;
+  border:1px solid var(--pline);border-radius:5px;padding:4px 8px;flex-shrink:0}
+.hrestore:hover{color:var(--t-bright);border-color:var(--t-dim)}
+.hrow.restored{border-left-color:var(--signal)}
+.hrow.restored .hx{background:var(--signal)}
+.hrow.restored .hrestore{color:var(--signal);border-color:rgba(201,242,78,.4);
+  background:rgba(201,242,78,.07)}
+
+.p-foot{border-top:1px solid var(--pline);
+  background:linear-gradient(180deg,#16171c,#101116);padding:10px 14px 11px}
+.stat+.stat{margin-top:8px}
+.stat{display:flex;align-items:center;gap:9px}
+.stat .sl{font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  color:var(--t-dim);width:96px;flex-shrink:0}
+.bar{flex:1;height:5px;border-radius:3px;background:var(--panel-4);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px}
+.bar .amber{background:linear-gradient(90deg,#8a6418,var(--deep));
+  animation:grow1 1.4s cubic-bezier(.2,.8,.2,1) .9s both}
+.bar .lime{background:var(--signal);animation:grow2 1.4s cubic-bezier(.2,.8,.2,1) 1s both}
+@keyframes grow1{from{width:0}to{width:18%}}
+@keyframes grow2{from{width:0}to{width:2%}}
+.stat .sv{font-family:var(--mono);font-size:10px;color:var(--t-mid);
+  width:74px;text-align:right;flex-shrink:0}
+.stat .sv b{color:var(--t-bright);font-weight:600}
+
+.caption{margin-top:22px;display:flex;align-items:center;gap:11px;
+  font-family:var(--mono);font-size:11.5px;color:#62646e}
+.caption .cd{width:9px;height:9px;background:var(--signal);transform:rotate(45deg);
+  border-radius:2px;box-shadow:0 0 10px rgba(201,242,78,.5)}
+.caption b{color:#9a9ca4;font-weight:500}
+
+@media(max-width:1180px){
+  .viewport{height:auto;flex-direction:column}
+  .panel{width:100%;border-left:0;border-top:1px solid #000}
+  .web{max-height:620px}
+  .cs-grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<div class="browser">
+
+  <div class="chrome">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="navb"><b>‹</b><b>›</b><b>⟳</b></div>
+    <div class="url">
+      <span class="lock">▲</span>
+      <span>carousell.com.hk</span>
+      <span class="cf"><span class="cfd"></span>Cloudflare protected</span>
+    </div>
+    <div class="exticons">
+      <div class="puzzle">⊞</div>
+      <div class="sieve-ic"><div class="di"></div><span class="badge">6</span></div>
+    </div>
+  </div>
+
+  <div class="viewport">
+
+    <!-- ============ LEFT : Carousell HK ============ -->
+    <main class="web">
+
+      <div class="cs-nav">
+        <div class="cs-logo">Carousell</div>
+        <div class="cs-search"><span class="mag">⌕</span>Search for items, brands and more</div>
+        <div class="cs-sell">＋ Sell</div>
+        <div class="right">
+          <span class="lang">中文</span>
+          <span>♡</span><span>💬</span><span>🔔</span>
+          <div class="cs-acct"></div>
+        </div>
+      </div>
+
+      <div class="cs-cats">
+        <div class="cs-cat on">✨ For you</div>
+        <div class="cs-cat">📱 Mobiles &amp; Gadgets</div>
+        <div class="cs-cat">👜 Luxury</div>
+        <div class="cs-cat">👗 Women's Fashion</div>
+        <div class="cs-cat">🪑 Home &amp; Living</div>
+        <div class="cs-cat">🎮 Gaming</div>
+        <div class="cs-cat">🚗 Cars</div>
+        <div class="cs-cat">🏠 Property</div>
+      </div>
+
+      <div class="cs-content">
+        <div class="cs-head">
+          <div>
+            <h1>Recommended for you</h1>
+            <div class="meta">Hong Kong · 320+ listings</div>
+          </div>
+        </div>
+
+        <div class="cs-grid" id="csgrid">
+
+          <article class="listing">
+            <div class="ls-photo" style="background:linear-gradient(140deg,#dfe6ea,#bcc9d2)">📱
+              <span class="ls-like">♡</span></div>
+            <div class="ls-info">
+              <div class="ls-price">HK$3,980</div>
+              <div class="ls-title">iPhone 13 Pro 256GB 99新 過保 齊配件</div>
+              <span class="ls-cond">Like new</span>
+              <div class="ls-seller"><span class="ls-av"></span>
+                <span class="ls-sname">kkwong_hk</span><span class="ls-rate">★4.9</span></div>
+              <div class="ls-foot">Mong Kok · 2 days ago</div>
+            </div>
+          </article>
+
+          <div class="filt" data-id="c-airpods">
+            <div class="ctile">
+              <span class="xd"></span>
+              <div class="ct-reason">collapsed listing
+                <span class="ftag">Spotlight · promoted</span></div>
+              <span class="ct-restore">restore</span>
+            </div>
+            <article class="listing">
+              <div class="ls-photo" style="background:linear-gradient(140deg,#eae2dd,#d3c6bb)">🎧
+                <span class="ls-spot">Spotlight</span><span class="ls-like">♡</span></div>
+              <div class="ls-info">
+                <div class="ls-price">HK$1,150</div>
+                <div class="ls-title">AirPods Pro 2 (USB-C) 行貨 全新</div>
+                <span class="ls-cond">Brand new</span>
+                <div class="ls-seller"><span class="ls-av"></span>
+                  <span class="ls-sname">gadget_shop</span><span class="ls-rate">★4.7</span></div>
+                <div class="ls-foot">Wan Chai · 1 day ago</div>
+              </div>
+            </article>
+          </div>
+
+          <article class="listing">
+            <div class="ls-photo" style="background:linear-gradient(140deg,#e7e3da,#cfc5b3)">🪑
+              <span class="ls-like">♡</span></div>
+            <div class="ls-info">
+              <div class="ls-price">HK$2,400</div>
+              <div class="ls-title">Herman Miller Aeron 人體工學椅 Size B</div>
+              <span class="ls-cond">Lightly used</span>
+              <div class="ls-seller"><span class="ls-av"></span>
+                <span class="ls-sname">office_clearout</span><span class="ls-rate">★4.8</span></div>
+              <div class="ls-foot">Kwun Tong · 5 days ago</div>
+            </div>
+          </article>
+
+          <article class="listing">
+            <div class="ls-photo" style="background:linear-gradient(140deg,#e4e7e3,#c6cfc6)">👟
+              <span class="ls-like">♡</span></div>
+            <div class="ls-info">
+              <div class="ls-price">HK$680</div>
+              <div class="ls-title">Nike Dunk Low Panda US9 全新 連單</div>
+              <span class="ls-cond">Brand new</span>
+              <div class="ls-seller"><span class="ls-av"></span>
+                <span class="ls-sname">sneakerhead.hk</span><span class="ls-rate">★4.7</span></div>
+              <div class="ls-foot">Causeway Bay · 1 day ago</div>
+            </div>
+          </article>
+
+          <div class="filt" data-id="c-chair">
+            <div class="ctile">
+              <span class="xd"></span>
+              <div class="ct-reason">collapsed listing
+                <span class="ftag">seller rating 3.9★</span></div>
+              <span class="ct-restore">restore</span>
+            </div>
+            <article class="listing">
+              <div class="ls-photo" style="background:linear-gradient(140deg,#e6e0e0,#cbbcbc)">🪑
+                <span class="ls-like">♡</span></div>
+              <div class="ls-info">
+                <div class="ls-price">HK$420</div>
+                <div class="ls-title">Gaming Chair 電競椅 二手</div>
+                <span class="ls-cond">Well used</span>
+                <div class="ls-seller"><span class="ls-av"></span>
+                  <span class="ls-sname">quicksale22</span><span class="ls-rate">★3.9</span></div>
+                <div class="ls-foot">Yuen Long · 8 days ago</div>
+              </div>
+            </article>
+          </div>
+
+          <article class="listing">
+            <div class="ls-photo" style="background:linear-gradient(140deg,#e3e1dd,#c7c2b8)">🎧
+              <span class="ls-like">♡</span></div>
+            <div class="ls-info">
+              <div class="ls-price">HK$890</div>
+              <div class="ls-title">Sony WH-1000XM4 降噪耳機 連原盒</div>
+              <span class="ls-cond">Lightly used</span>
+              <div class="ls-seller"><span class="ls-av"></span>
+                <span class="ls-sname">audio_gear</span><span class="ls-rate">★5.0</span></div>
+              <div class="ls-foot">Sham Shui Po · 3 days ago</div>
+            </div>
+          </article>
+
+          <article class="listing">
+            <div class="ls-photo" style="background:linear-gradient(140deg,#efe7d4,#ddd0b0)">💻
+              <span class="ls-like">♡</span></div>
+            <div class="ls-info">
+              <div class="ls-price">HK$4,200</div>
+              <div class="ls-title">MacBook Air M1 8/256 太空灰 電池100%</div>
+              <span class="ls-cond">Like new</span>
+              <div class="ls-seller"><span class="ls-av"></span>
+                <span class="ls-sname">mac_trader</span><span class="ls-rate">★4.9</span></div>
+              <div class="ls-foot">Tsim Sha Tsui · 2 days ago</div>
+            </div>
+          </article>
+
+          <div class="filt" data-id="c-switch">
+            <div class="ctile">
+              <span class="xd"></span>
+              <div class="ct-reason"><span class="dm">⟂</span> collapsed · description
+                <span class="ftag">"需維修"</span></div>
+              <span class="ct-restore">restore</span>
+            </div>
+            <article class="listing">
+              <div class="ls-photo" style="background:linear-gradient(140deg,#e2e6ea,#c4cdd6)">🎮
+                <span class="ls-like">♡</span></div>
+              <div class="ls-info">
+                <div class="ls-price">HK$680</div>
+                <div class="ls-title">Nintendo Switch 主機 — 需維修 Joy-Con drift</div>
+                <span class="ls-cond">For parts</span>
+                <div class="ls-seller"><span class="ls-av"></span>
+                  <span class="ls-sname">gamer_hk</span><span class="ls-rate">★4.6</span></div>
+                <div class="ls-foot">Tai Kok Tsui · 4 days ago</div>
+              </div>
+            </article>
+          </div>
+
+          <article class="listing">
+            <div class="ls-photo" style="background:linear-gradient(140deg,#e8e4dc,#d0c8b8)">🌀
+              <span class="ls-like">♡</span></div>
+            <div class="ls-info">
+              <div class="ls-price">HK$1,650</div>
+              <div class="ls-title">Dyson V11 無線吸塵機 連配件</div>
+              <span class="ls-cond">Well used</span>
+              <div class="ls-seller"><span class="ls-av"></span>
+                <span class="ls-sname">homestuff88</span><span class="ls-rate">★4.6</span></div>
+              <div class="ls-foot">Tsuen Wan · 6 days ago</div>
+            </div>
+          </article>
+
+          <div class="filt" data-id="c-coach">
+            <div class="ctile">
+              <span class="xd"></span>
+              <div class="ct-reason">collapsed listing
+                <span class="ftag">Spotlight · promoted</span></div>
+              <span class="ct-restore">restore</span>
+            </div>
+            <article class="listing">
+              <div class="ls-photo" style="background:linear-gradient(140deg,#e9e1d9,#d2c3b6)">👜
+                <span class="ls-spot">Spotlight</span><span class="ls-like">♡</span></div>
+              <div class="ls-info">
+                <div class="ls-price">HK$880</div>
+                <div class="ls-title">Coach 手袋 二手 有單據</div>
+                <span class="ls-cond">Lightly used</span>
+                <div class="ls-seller"><span class="ls-av"></span>
+                  <span class="ls-sname">bag_lover_hk</span><span class="ls-rate">★4.8</span></div>
+                <div class="ls-foot">Central · 2 days ago</div>
+              </div>
+            </article>
+          </div>
+
+          <article class="listing">
+            <div class="ls-photo" style="background:linear-gradient(140deg,#e6e3df,#cac4b9)">🧥
+              <span class="ls-like">♡</span></div>
+            <div class="ls-info">
+              <div class="ls-price">HK$150</div>
+              <div class="ls-title">Uniqlo 男裝 輕型羽絨褸 M碼</div>
+              <span class="ls-cond">Lightly used</span>
+              <div class="ls-seller"><span class="ls-av"></span>
+                <span class="ls-sname">wardrobe_sale</span><span class="ls-rate">★4.8</span></div>
+              <div class="ls-foot">Tai Po · 4 days ago</div>
+            </div>
+          </article>
+
+          <article class="listing">
+            <div class="ls-photo" style="background:linear-gradient(140deg,#e7e6e0,#cdcabb)">🧱
+              <span class="ls-like">♡</span></div>
+            <div class="ls-info">
+              <div class="ls-price">HK$5,400</div>
+              <div class="ls-title">LEGO Star Wars 75192 千歲鷹 全新未開</div>
+              <span class="ls-cond">Brand new</span>
+              <div class="ls-seller"><span class="ls-av"></span>
+                <span class="ls-sname">brickfan</span><span class="ls-rate">★4.9</span></div>
+              <div class="ls-foot">Tseung Kwan O · 2 days ago</div>
+            </div>
+          </article>
+
+          <div class="filt" data-id="c-buds">
+            <div class="ctile">
+              <span class="xd"></span>
+              <div class="ct-reason">collapsed listing
+                <span class="ftag">seller rating 3.4★</span></div>
+              <span class="ct-restore">restore</span>
+            </div>
+            <article class="listing">
+              <div class="ls-photo" style="background:linear-gradient(140deg,#e6e0e0,#cbbcbc)">🎧
+                <span class="ls-like">♡</span></div>
+              <div class="ls-info">
+                <div class="ls-price">HK$90</div>
+                <div class="ls-title">藍牙耳機 平價 全新</div>
+                <span class="ls-cond">Brand new</span>
+                <div class="ls-seller"><span class="ls-av"></span>
+                  <span class="ls-sname">cheapdeals_hk</span><span class="ls-rate">★3.4</span></div>
+                <div class="ls-foot">Mong Kok · 10 days ago</div>
+              </div>
+            </article>
+          </div>
+
+          <div class="filt" data-id="c-router">
+            <div class="ctile">
+              <span class="xd"></span>
+              <div class="ct-reason"><span class="dm">⟂</span> collapsed · description
+                <span class="ftag">"壞咗"</span></div>
+              <span class="ct-restore">restore</span>
+            </div>
+            <article class="listing">
+              <div class="ls-photo" style="background:linear-gradient(140deg,#e2e6ea,#c4cdd6)">📶
+                <span class="ls-like">♡</span></div>
+              <div class="ls-info">
+                <div class="ls-price">HK$60</div>
+                <div class="ls-title">二手 Wi-Fi Router — 壞咗 當零件賣</div>
+                <span class="ls-cond">For parts</span>
+                <div class="ls-seller"><span class="ls-av"></span>
+                  <span class="ls-sname">techbits</span><span class="ls-rate">★4.5</span></div>
+                <div class="ls-foot">Kowloon Bay · 7 days ago</div>
+              </div>
+            </article>
+          </div>
+
+        </div>
+
+        <div class="cs-more">+ 290 more listings · loaded as you scroll</div>
+      </div>
+    </main>
+
+    <!-- ============ RIGHT : side panel ============ -->
+    <aside class="panel">
+
+      <div class="p-head">
+        <div class="p-brand"><span class="mk"></span><h2>SIEVE</h2><span class="gear">⚙</span></div>
+        <div class="p-sub">NEGATIVE FILTERING · ANY WEB LIST</div>
+        <div class="p-conn">
+          <span class="dot"></span><span class="host">carousell.com.hk</span>
+          <span class="en">ENABLED ▸</span>
+        </div>
+      </div>
+
+      <div class="p-body">
+
+        <section>
+          <div class="sec-lab">PAGE</div>
+          <div class="pagecard">
+            <div class="pcrow"><span class="ok">✓</span><span>Listing grid detected</span>
+              <span class="v">320+ items</span></div>
+            <div class="pcrow"><span class="ok">✓</span><span>Schema cached</span>
+              <span class="v">28 loaded</span></div>
+            <div class="footprint">
+              <b>◆ minimal footprint.</b> Filtered cells collapse to a placeholder so the grid
+              never tears — or switch Display to Hide. Passing listings never touched.
+            </div>
+            <div class="scope">
+              <b>⚠ Cloudflare.</b> This site bot-challenges traffic. Deep scan runs in a real
+              tab with your session (passes the check) — but keep concurrency low.
+            </div>
+            <div class="modesel">
+              <span class="ml">DISPLAY</span>
+              <div class="modeseg">
+                <b class="on" data-mode="collapse">collapse</b>
+                <b data-mode="hide">hide</b>
+              </div>
+            </div>
+            <div class="fields">
+              <div class="fl">DISCOVERED FIELDS</div>
+              <div class="fchips">
+                <span class="fchip used">price</span><span class="fchip">title</span>
+                <span class="fchip used">condition</span><span class="fchip used">seller rating</span>
+                <span class="fchip used">listing type</span><span class="fchip">location</span>
+                <span class="fchip deep">description · deep</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="sec-lab">FILTERS <span class="ct">· 3 active</span></div>
+
+          <div class="filter exclude">
+            <div class="f-head">
+              <span class="pill ex">EXCLUDE</span>
+              <span class="f-field">listing type</span>
+              <span class="f-cond">is</span>
+            </div>
+            <span class="valchip">◆ Spotlight (promoted)</span>
+            <div class="controls">
+              <span class="ctl" style="opacity:.4;cursor:default"><span class="sw"></span>deep n/a</span>
+              <span class="save" data-save><span class="pin">♡</span>ephemeral</span>
+              <span class="removed"><b>2</b> filtered</span>
+            </div>
+          </div>
+
+          <div class="filter exclude">
+            <div class="f-head">
+              <span class="pill ex">EXCLUDE</span>
+              <span class="f-field">seller rating</span>
+              <span class="f-cond">is below</span>
+            </div>
+            <div class="valbox">
+              <div class="num">4.6 <span class="st">★</span> <small>/ 5</small></div>
+              <div class="track"><span class="fillb"></span><span class="knob"></span></div>
+              <div class="track-lab"><span>1.0</span><span>5.0</span></div>
+            </div>
+            <div class="controls">
+              <span class="ctl" style="opacity:.4;cursor:default"><span class="sw"></span>deep n/a</span>
+              <span class="save saved" data-save><span class="pin">♥</span>saved</span>
+              <span class="removed"><b>2</b> filtered</span>
+            </div>
+          </div>
+
+          <div class="filter exclude">
+            <div class="f-head">
+              <span class="pill ex">EXCLUDE</span>
+              <span class="f-field">description</span>
+              <span class="f-cond">contains any</span>
+            </div>
+            <div class="phrases">
+              <span class="phrase">需維修 <x>✕</x></span>
+              <span class="phrase">for parts <x>✕</x></span>
+              <span class="phrase">壞咗 <x>✕</x></span>
+              <span class="addp">+ phrase</span>
+            </div>
+            <div class="controls">
+              <span class="ctl regex" data-ctl><span class="sw"></span>regex</span>
+              <span class="ctl on" data-ctl><span class="sw"></span>deep</span>
+              <span class="save" data-save><span class="pin">♡</span>ephemeral</span>
+              <span class="removed"><b>2</b> filtered</span>
+            </div>
+          </div>
+
+          <button class="newfilter">+ new filter · pick a field above</button>
+        </section>
+
+        <section>
+          <div class="sec-lab">HIDDEN <span class="ct" id="hcount">· 6</span></div>
+          <div class="h-intro">Each row toggles restore ⇄ hide ·
+            <span class="restore-all" id="restoreAll">restore all</span></div>
+
+          <div class="hrow" data-restore="c-airpods">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">AirPods Pro 2 (USB-C) 行貨</div>
+              <div class="hreason">listing type · Spotlight</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="c-coach">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">Coach 手袋 二手</div>
+              <div class="hreason">listing type · Spotlight</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="c-chair">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">Gaming Chair 電競椅</div>
+              <div class="hreason">seller rating · 3.9★ below 4.6</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="c-buds">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">藍牙耳機 平價 全新</div>
+              <div class="hreason">seller rating · 3.4★ below 4.6</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="c-switch">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">Nintendo Switch 主機</div>
+              <div class="hreason"><span class="dm">⟂</span> description · "需維修"</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="c-router">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">二手 Wi-Fi Router</div>
+              <div class="hreason"><span class="dm">⟂</span> description · "壞咗"</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+        </section>
+
+      </div>
+
+      <div class="p-foot">
+        <div class="stat">
+          <span class="sl">DEEP SCAN</span>
+          <span class="bar"><i class="amber"></i></span>
+          <span class="sv"><b id="scanN">5</b> / 28</span>
+        </div>
+        <div class="stat">
+          <span class="sl">API SPEND · TODAY</span>
+          <span class="bar"><i class="lime"></i></span>
+          <span class="sv"><b>$0.02</b> / $1.00</span>
+        </div>
+      </div>
+
+    </aside>
+
+  </div>
+</div>
+
+<div class="caption">
+  <span class="cd"></span>
+  <span><b>Sieve</b> on Carousell HK — filtered listings collapse to a placeholder cell ·
+    toggle Display, or restore ⇄ hide per row</span>
+</div>
+
+<script>
+var csgrid=document.getElementById('csgrid');
+document.querySelectorAll('.modeseg b').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.modeseg b').forEach(function(x){x.classList.remove('on')});
+    b.classList.add('on');
+    csgrid.classList.toggle('mode-hide', b.dataset.mode==='hide');
+  });
+});
+function setState(id,restored){
+  var filt=document.querySelector('.filt[data-id="'+id+'"]');
+  if(filt) filt.classList.toggle('restored',restored);
+  var row=document.querySelector('.hrow[data-restore="'+id+'"]');
+  if(row){
+    row.classList.toggle('restored',restored);
+    row.querySelector('.hrestore').textContent=restored?'hide':'restore';
+  }
+  refresh();
+}
+function refresh(){
+  var hidden=document.querySelectorAll('.hrow:not(.restored)').length;
+  document.getElementById('hcount').textContent='· '+hidden;
+  document.getElementById('restoreAll').textContent=hidden?'restore all':'hide all';
+}
+document.querySelectorAll('.hrow').forEach(function(row){
+  row.querySelector('.hrestore').addEventListener('click',function(){
+    setState(row.dataset.restore,!row.classList.contains('restored'));
+  });
+});
+document.querySelectorAll('.filt').forEach(function(filt){
+  filt.querySelector('.ctile').addEventListener('click',function(){
+    setState(filt.dataset.id,true);
+  });
+  var rh=document.createElement('span');
+  rh.className='rehide';
+  rh.textContent='↺ re-hide';
+  rh.addEventListener('click',function(e){e.stopPropagation();setState(filt.dataset.id,false);});
+  filt.appendChild(rh);
+});
+document.getElementById('restoreAll').addEventListener('click',function(){
+  var toRestore=document.querySelectorAll('.hrow:not(.restored)').length>0;
+  document.querySelectorAll('.hrow').forEach(function(row){
+    setState(row.dataset.restore,toRestore);
+  });
+});
+document.querySelectorAll('[data-ctl]').forEach(function(c){
+  c.addEventListener('click',function(){c.classList.toggle('on');});
+});
+document.querySelectorAll('[data-save]').forEach(function(b){
+  b.addEventListener('click',function(){
+    var on=b.classList.toggle('saved');
+    b.querySelector('.pin').textContent=on?'♥':'♡';
+    b.childNodes[b.childNodes.length-1].textContent=on?'saved':'ephemeral';
+  });
+});
+var n=5;
+var t=setInterval(function(){
+  n++; document.getElementById('scanN').textContent=n;
+  if(n>=11) clearInterval(t);
+},1500);
+</script>
+
+</body>
+</html>

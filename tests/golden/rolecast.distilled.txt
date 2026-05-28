@@ -1,0 +1,12 @@
+<main class="joblist">
+  <article class="job">
+    <h2 class="title">…</h2>
+    <p class="company">…</p>
+    <div class="meta">
+      <span class="location">…</span>
+      <span class="comp">…</span>
+    </div>
+    <p class="snippet">…</p>
+  </article>
+  … ×9 more <article.job>
+</main>

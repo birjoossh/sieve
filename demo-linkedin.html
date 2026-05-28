@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sieve — LinkedIn jobs mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================
+   Sieve on a LinkedIn job-search page.
+   Filtered jobs: collapse (default) -> horizontal sliver in the
+   list; hide -> display:none. Toggle in the panel. Detail pane
+   stays untouched LinkedIn. Restore <-> hide per row.
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --li:#0a66c2; --li-bg:#f4f2ee; --card:#ffffff;
+  --ink:#1b1b1b; --ink-soft:#5e5e5e; --ink-faint:#8c8c8c; --line:#e3e1dc;
+
+  --panel:#131419; --panel-2:#1b1c22; --panel-3:#22242b; --panel-4:#2b2d35;
+  --pline:#2f313a; --t-bright:#eceae3; --t-mid:#9a9ca6; --t-dim:#696b75;
+
+  --signal:#c9f24e; --exclude:#ff7d63; --deep:#f3b13f;
+
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --disp:'Bricolage Grotesque','IBM Plex Sans',sans-serif;
+}
+html,body{height:100%}
+body{
+  font-family:var(--sans);
+  background:
+    radial-gradient(1100px 560px at 76% -12%, rgba(201,242,78,.07), transparent 70%),
+    radial-gradient(900px 600px at 8% 108%, rgba(243,177,63,.05), transparent 70%),
+    #0c0d10;
+  color:var(--t-bright);
+  display:flex;flex-direction:column;align-items:center;
+  padding:34px 22px 46px;min-height:100%;-webkit-font-smoothing:antialiased;
+}
+
+/* ---------- browser shell ---------- */
+.browser{
+  width:min(1380px,97vw);border-radius:15px;overflow:hidden;background:#1a1b20;
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 40px 90px -30px rgba(0,0,0,.85),
+    0 12px 34px -12px rgba(0,0,0,.6);
+  border:1px solid #34363f;animation:wake .7s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes wake{from{opacity:0;transform:translateY(16px) scale(.992)}to{opacity:1;transform:none}}
+.chrome{display:flex;align-items:center;gap:14px;height:48px;padding:0 15px;
+  background:linear-gradient(180deg,#303239,#282a30);border-bottom:1px solid #15161a}
+.lights{display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#ec6a5e}
+.lights i:nth-child(2){background:#f4be4f}
+.lights i:nth-child(3){background:#61c454}
+.navb{display:flex;gap:3px;margin-left:4px}
+.navb b{width:27px;height:27px;border-radius:7px;display:grid;place-items:center;
+  color:#9fa1aa;font-size:14px}
+.navb b:last-child{color:#6b6d76}
+.url{flex:1;height:30px;border-radius:8px;background:#1c1d22;border:1px solid #15161a;
+  display:flex;align-items:center;gap:9px;padding:0 12px;
+  font-family:var(--mono);font-size:12.5px;color:#c4c6cf}
+.url .lock{color:var(--signal);font-size:11px}
+.url .dim{color:#6a6c75}
+.exticons{display:flex;align-items:center;gap:9px}
+.exticons .puzzle{width:28px;height:28px;border-radius:7px;display:grid;
+  place-items:center;color:#8a8c95;font-size:14px}
+.sieve-ic{position:relative;width:28px;height:28px;border-radius:7px;display:grid;
+  place-items:center;background:radial-gradient(circle at 38% 32%,#2c2f1a,#1a1b15);
+  border:1px solid #4d5430;
+  box-shadow:0 0 0 1px rgba(201,242,78,.13),0 0 14px -3px rgba(201,242,78,.4)}
+.sieve-ic .di{width:13px;height:13px;transform:rotate(45deg);background:var(--signal);
+  border-radius:3px;box-shadow:0 0 9px rgba(201,242,78,.7)}
+.sieve-ic .di::after{content:"";position:absolute;inset:4.5px;background:#1a1b15;
+  border-radius:2px;transform:rotate(45deg)}
+.badge{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;padding:0 3px;
+  border-radius:8px;background:var(--exclude);color:#2a0f08;font-family:var(--mono);
+  font-size:9.5px;font-weight:600;display:grid;place-items:center;border:1.5px solid #282a30}
+
+.viewport{display:flex;height:836px}
+
+/* ============ LEFT : LinkedIn ============ */
+.web{flex:1;display:flex;flex-direction:column;background:var(--li-bg);
+  color:var(--ink);overflow:hidden}
+.li-nav{display:flex;align-items:center;gap:12px;height:52px;padding:0 18px;
+  background:var(--card);border-bottom:1px solid var(--line);flex-shrink:0}
+.li-logo{width:30px;height:30px;border-radius:5px;background:var(--li);
+  display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;letter-spacing:-.04em}
+.li-search{width:220px;height:32px;border-radius:5px;background:#edf3f8;
+  display:flex;align-items:center;gap:8px;padding:0 11px;font-size:13px;color:var(--ink-soft)}
+.li-nav nav{display:flex;gap:6px;margin-left:auto}
+.li-navitem{display:flex;flex-direction:column;align-items:center;gap:1px;
+  padding:5px 11px;font-size:11px;color:var(--ink-faint);border-bottom:2px solid transparent}
+.li-navitem .ic{font-size:16px;line-height:1}
+.li-navitem.on{color:var(--ink);border-bottom-color:var(--ink)}
+.li-avatar{width:24px;height:24px;border-radius:50%;
+  background:linear-gradient(135deg,#caa86a,#9e7b3f)}
+
+.li-searchrow{background:var(--card);border-bottom:1px solid var(--line);
+  padding:11px 18px 12px;flex-shrink:0}
+.li-keys{display:flex;gap:9px;margin-bottom:11px}
+.li-keyfield{height:34px;border-radius:6px;border:1px solid #b9c6cf;background:#edf3f8;
+  display:flex;align-items:center;gap:8px;padding:0 12px;font-size:13.5px;font-weight:600}
+.li-keyfield.k1{width:280px}
+.li-keyfield.k2{width:210px;font-weight:400;color:var(--ink-soft)}
+.li-keyfield .pin{color:var(--li)}
+.li-go{height:34px;padding:0 18px;border-radius:6px;background:var(--li);color:#fff;
+  font-size:13px;font-weight:600;display:grid;place-items:center}
+.li-pills{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.li-pill{font-size:12px;color:var(--ink-soft);font-weight:600;
+  border:1px solid #b3b3b3;border-radius:14px;padding:5px 11px;background:var(--card)}
+.li-pill.act{background:#e8f0fa;border-color:var(--li);color:var(--li)}
+.li-pill .cv{color:var(--ink-faint);font-weight:400}
+.li-native-lab{font-family:var(--mono);font-size:10px;color:var(--ink-faint);margin-right:3px}
+
+.li-jobs{flex:1;display:flex;overflow:hidden}
+.li-list{width:392px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--line);
+  background:var(--card)}
+.li-list::-webkit-scrollbar{width:9px}
+.li-list::-webkit-scrollbar-thumb{background:#d8d5cd;border:2px solid var(--card);border-radius:7px}
+.li-list-head{padding:13px 16px 9px;border-bottom:1px solid var(--line)}
+.li-list-head h2{font-size:16px;font-weight:600}
+.li-list-head .rc{font-size:12px;color:var(--ink-faint);margin-top:2px}
+
+.joblist{display:flex;flex-direction:column}
+.li-card{position:relative;display:flex;gap:11px;padding:13px 16px;
+  border-bottom:1px solid var(--line);cursor:pointer;
+  animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+.joblist>*:nth-child(1){animation-delay:.18s}
+.joblist>*:nth-child(2){animation-delay:.23s}
+.joblist>*:nth-child(3){animation-delay:.28s}
+.joblist>*:nth-child(4){animation-delay:.33s}
+.joblist>*:nth-child(5){animation-delay:.38s}
+.joblist>*:nth-child(6){animation-delay:.43s}
+.joblist>*:nth-child(7){animation-delay:.48s}
+.joblist>*:nth-child(8){animation-delay:.53s}
+.joblist>*:nth-child(9){animation-delay:.58s}
+.joblist>*:nth-child(10){animation-delay:.63s}
+@keyframes rise{from{opacity:0;transform:translateY(11px)}to{opacity:1;transform:none}}
+.li-card:hover{background:#f3f7fb}
+.li-card.sel{background:#eaf1f8;box-shadow:inset 3px 0 0 var(--li)}
+.li-logo{width:46px;height:46px;border-radius:7px;flex-shrink:0;display:grid;
+  place-items:center;color:#fff;font-weight:700;font-size:17px;font-family:var(--disp)}
+.li-cmain{flex:1;min-width:0}
+.li-cmain h3{font-size:15px;font-weight:600;color:var(--li);letter-spacing:-.01em}
+.li-co{font-size:13px;color:var(--ink);margin-top:1px}
+.li-loc{font-size:12.5px;color:var(--ink-faint);margin-top:1px}
+.li-meta{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap}
+.li-ea{display:flex;align-items:center;gap:3px;font-size:11.5px;color:var(--ink-soft);font-weight:500}
+.li-ea .lk{color:var(--li);font-weight:800}
+.li-mt{font-size:11.5px;color:var(--ink-faint)}
+.li-app{font-size:11.5px;color:#3b7d3b}
+
+/* a FILTERED job : wrapper holds the in-place sliver + the (revealed-on-restore) card */
+.filt{position:relative}
+.filt .li-card{display:none}
+.filt.restored .li-card{display:flex}
+.filt.restored .li-sliver{display:none}
+.joblist.mode-hide .filt:not(.restored){display:none}
+/* a restored item keeps a small in-page re-hide marker */
+.rehide{display:none}
+.filt.restored .rehide{display:inline-flex;align-items:center;gap:4px;
+  position:absolute;top:-9px;right:14px;z-index:4;cursor:pointer;
+  font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.02em;
+  background:var(--signal);color:#1a2207;padding:3px 8px;border-radius:5px;
+  box-shadow:0 3px 8px -3px rgba(0,0,0,.4)}
+.filt.restored .rehide:hover{filter:brightness(1.07)}
+
+/* horizontal sliver — collapse mode, in the results list */
+.li-sliver{display:flex;align-items:center;gap:10px;background:#efe9dd;
+  border-bottom:1px solid var(--line);border-left:3px solid var(--exclude);
+  padding:11px 16px;cursor:pointer}
+.li-sliver:hover{background:#f1ece1}
+.li-sliver .xd{width:12px;height:12px;background:var(--exclude);transform:rotate(45deg);
+  border-radius:2px;flex-shrink:0;opacity:.9}
+.li-sliver .sv-co{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);
+  white-space:nowrap}
+.li-sliver .sv-ti{font-size:12px;color:var(--ink-soft);text-decoration:line-through;
+  text-decoration-color:#c3bca9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li-sliver .reason{margin-left:auto;display:flex;align-items:center;gap:5px;
+  font-family:var(--mono);font-size:10px;color:#c14e36;white-space:nowrap}
+.li-sliver .reason .ftag{background:rgba(255,125,99,.16);padding:1.5px 5px;border-radius:4px;
+  color:#b9472f}
+.li-sliver .reason .dm{color:#b5841f}
+.li-sliver .restore-ip{font-family:var(--mono);font-size:10px;color:var(--ink-faint);
+  border:1px solid #d3ccba;border-radius:5px;padding:2.5px 8px}
+.li-sliver:hover .restore-ip{color:var(--ink-soft);border-color:#bdb6a2}
+
+.li-detail{flex:1;overflow-y:auto;background:var(--card)}
+.li-detail::-webkit-scrollbar{width:10px}
+.li-detail::-webkit-scrollbar-thumb{background:#d8d5cd;border:3px solid var(--card);border-radius:8px}
+.li-dh{padding:20px 26px 16px}
+.li-dh-top{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);
+  font-weight:600;margin-bottom:9px}
+.li-dh-top .dlogo{width:24px;height:24px;border-radius:5px;display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:11px}
+.li-dh h1{font-size:23px;font-weight:600;letter-spacing:-.02em}
+.li-dh .sub{font-size:13px;color:var(--ink-faint);margin-top:5px}
+.li-actions{display:flex;gap:9px;margin-top:15px}
+.li-apply{height:38px;padding:0 22px;border-radius:20px;background:var(--li);color:#fff;
+  font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px}
+.li-save{height:38px;padding:0 20px;border-radius:20px;background:var(--card);
+  color:var(--li);border:1.5px solid var(--li);font-size:14px;font-weight:600;
+  display:grid;place-items:center}
+.li-jd{padding:18px 26px 36px;border-top:1px solid var(--line);margin-top:16px}
+.li-jd h4{font-size:16px;font-weight:600;margin-bottom:11px}
+.li-jd p{font-size:13.5px;line-height:1.72;color:#2c2c2c;margin-bottom:13px}
+.li-jd .lab{font-weight:600;color:var(--ink)}
+
+/* ============ RIGHT : side panel ============ */
+.panel{width:380px;flex-shrink:0;background:var(--panel);border-left:1px solid #000;
+  display:flex;flex-direction:column;position:relative}
+.panel::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  opacity:.035}
+.panel>*{position:relative;z-index:1}
+.p-head{padding:15px 16px 13px;border-bottom:1px solid var(--pline);
+  background:linear-gradient(180deg,#1a1b21,#141519)}
+.p-brand{display:flex;align-items:center;gap:10px}
+.p-brand .mk{width:24px;height:24px;transform:rotate(45deg);border-radius:5px;
+  background:var(--signal);box-shadow:0 0 14px -2px rgba(201,242,78,.6);
+  position:relative;flex-shrink:0}
+.p-brand .mk::after{content:"";position:absolute;inset:6px;background:var(--panel);border-radius:2px}
+.p-brand h2{font-family:var(--disp);font-size:18px;font-weight:700;letter-spacing:.14em}
+.p-brand .gear{margin-left:auto;color:var(--t-dim);font-size:15px}
+.p-sub{font-family:var(--mono);font-size:9.5px;color:var(--t-dim);
+  letter-spacing:.16em;margin:3px 0 11px 34px}
+.p-conn{display:flex;align-items:center;gap:8px;background:var(--panel-3);
+  border:1px solid var(--pline);border-radius:7px;padding:7px 10px;
+  font-family:var(--mono);font-size:11px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--signal);
+  box-shadow:0 0 8px var(--signal);flex-shrink:0;animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.p-conn .host{color:var(--t-bright)}
+.p-conn .en{color:var(--signal);margin-left:auto;font-size:10px;letter-spacing:.04em}
+
+.p-body{flex:1;overflow-y:auto;padding:15px 16px 16px}
+.p-body::-webkit-scrollbar{width:9px}
+.p-body::-webkit-scrollbar-thumb{background:#34363f;border:3px solid var(--panel);border-radius:8px}
+.sec-lab{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10px;
+  letter-spacing:.17em;color:var(--t-dim);margin:4px 0 10px}
+.sec-lab::after{content:"";flex:1;height:1px;background:var(--pline)}
+.sec-lab .ct{color:var(--t-mid);letter-spacing:.04em}
+.p-body section{animation:slidein .6s cubic-bezier(.2,.8,.2,1) both}
+.p-body section:nth-of-type(1){animation-delay:.30s}
+.p-body section:nth-of-type(2){animation-delay:.40s}
+.p-body section:nth-of-type(3){animation-delay:.50s}
+@keyframes slidein{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+
+.pagecard{background:var(--panel-2);border:1px solid var(--pline);border-radius:9px;
+  padding:12px;margin-bottom:18px}
+.pcrow{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.pcrow+.pcrow{margin-top:9px}
+.pcrow .ok{color:var(--signal);font-family:var(--mono);font-size:12px}
+.pcrow .v{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--t-mid)}
+.footprint{margin-top:11px;padding:9px 10px;border-radius:7px;
+  background:rgba(201,242,78,.05);border:1px solid rgba(201,242,78,.16);
+  font-family:var(--mono);font-size:10.5px;color:var(--t-mid);line-height:1.6}
+.footprint b{color:var(--signal);font-weight:500}
+.scope{margin-top:9px;padding:9px 10px;border-radius:7px;
+  background:rgba(243,177,63,.06);border:1px solid rgba(243,177,63,.2);
+  font-family:var(--mono);font-size:10.5px;color:var(--t-mid);line-height:1.65}
+.scope b{color:var(--deep);font-weight:500}
+.modesel{display:flex;align-items:center;gap:9px;margin-top:11px}
+.modesel .ml{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;color:var(--t-dim)}
+.modeseg{margin-left:auto;display:flex;background:var(--panel-3);
+  border:1px solid var(--pline);border-radius:7px;padding:2px}
+.modeseg b{font-family:var(--mono);font-size:10px;font-weight:500;padding:5px 11px;
+  border-radius:5px;cursor:pointer;color:var(--t-dim)}
+.modeseg b.on{background:var(--panel-4);color:var(--signal)}
+.fields{margin-top:11px;padding-top:11px;border-top:1px solid var(--pline)}
+.fields .fl{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+  color:var(--t-dim);margin-bottom:7px}
+.fchips{display:flex;flex-wrap:wrap;gap:5px}
+.fchip{font-family:var(--mono);font-size:10.5px;color:var(--t-mid);
+  background:var(--panel-3);border:1px solid var(--pline);border-radius:5px;padding:3px 7px}
+.fchip.deep{color:var(--deep);border-color:rgba(243,177,63,.32);background:rgba(243,177,63,.07)}
+.fchip.used{color:var(--signal);border-color:rgba(201,242,78,.3);background:rgba(201,242,78,.07)}
+
+.filter{background:var(--panel-2);border:1px solid var(--pline);border-radius:9px;
+  padding:12px;margin-bottom:10px}
+.filter.exclude{border-left:2.5px solid var(--exclude)}
+.filter.keep{border-left:2.5px solid var(--signal)}
+.f-head{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.pill{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.08em;
+  padding:3px 7px;border-radius:4px}
+.pill.ex{background:rgba(255,125,99,.15);color:var(--exclude)}
+.pill.kp{background:rgba(201,242,78,.15);color:var(--signal)}
+.f-field{font-size:13px;font-weight:600;color:var(--t-bright)}
+.f-cond{font-family:var(--mono);font-size:10.5px;color:var(--t-dim);margin-left:auto}
+.phrases{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.phrase{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;
+  color:var(--t-bright);background:var(--panel-3);
+  border:1px solid rgba(201,242,78,.28);border-radius:6px;padding:4px 4px 4px 8px}
+.phrase x{color:var(--t-dim);font-style:normal;cursor:pointer;width:14px;height:14px;
+  display:grid;place-items:center;border-radius:3px}
+.phrase x:hover{background:var(--panel-4);color:var(--exclude)}
+.addp{font-family:var(--mono);font-size:11px;color:var(--t-dim);
+  border:1px dashed var(--pline);border-radius:6px;padding:4px 9px}
+.valbox{margin-bottom:10px}
+.valbox .num{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--t-bright)}
+.valbox .num small{font-size:11px;color:var(--t-dim);font-weight:400}
+.track{height:4px;border-radius:3px;background:var(--panel-4);margin-top:8px;position:relative}
+.track .fillb{position:absolute;left:0;top:0;bottom:0;width:33%;
+  background:var(--exclude);border-radius:3px}
+.track .knob{position:absolute;left:33%;top:50%;width:13px;height:13px;
+  background:var(--t-bright);border-radius:50%;transform:translate(-50%,-50%);
+  border:2px solid var(--panel-2)}
+.track-lab{display:flex;justify-content:space-between;font-family:var(--mono);
+  font-size:9px;color:var(--t-dim);margin-top:6px}
+.controls{display:flex;align-items:center;gap:6px;padding-top:9px;border-top:1px solid var(--pline)}
+.ctl{display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);
+  font-size:10px;color:var(--t-dim);border:1px solid var(--pline);border-radius:6px;
+  padding:4px 7px;background:var(--panel-3);user-select:none}
+.ctl .sw{width:20px;height:11px;border-radius:7px;background:var(--panel-4);
+  position:relative;transition:.18s;flex-shrink:0}
+.ctl .sw::after{content:"";position:absolute;top:1.5px;left:1.5px;width:8px;height:8px;
+  border-radius:50%;background:#7d808b;transition:.18s}
+.ctl.on{color:var(--deep);border-color:rgba(243,177,63,.4)}
+.ctl.on .sw{background:rgba(243,177,63,.35)}
+.ctl.on .sw::after{left:10.5px;background:var(--deep)}
+.ctl.regex.on{color:var(--signal);border-color:rgba(201,242,78,.4)}
+.ctl.regex.on .sw{background:rgba(201,242,78,.3)}
+.ctl.regex.on .sw::after{background:var(--signal)}
+.removed{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--exclude)}
+.removed b{font-weight:600}
+.save{display:flex;align-items:center;gap:5px;cursor:pointer;font-family:var(--mono);
+  font-size:10px;color:var(--t-dim);border:1px solid var(--pline);border-radius:6px;
+  padding:4px 7px;background:var(--panel-3)}
+.save .pin{font-size:11px}
+.save.saved{color:var(--signal);border-color:rgba(201,242,78,.4);background:rgba(201,242,78,.07)}
+.filter.compact{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.filter.compact .vchip{font-family:var(--mono);font-size:10px;color:var(--signal);
+  background:rgba(201,242,78,.1);border:1px solid rgba(201,242,78,.25);
+  border-radius:5px;padding:2px 6px}
+.filter.compact .removed{font-size:10px}
+.newfilter{width:100%;margin-top:4px;font-family:var(--mono);font-size:11.5px;
+  color:var(--t-mid);border:1px dashed var(--pline);border-radius:8px;padding:11px;
+  background:transparent;text-align:center;cursor:pointer}
+.newfilter:hover{border-color:var(--t-dim);color:var(--t-bright)}
+
+/* HIDDEN list */
+.h-intro{font-family:var(--mono);font-size:10px;color:var(--t-dim);line-height:1.6;
+  margin-bottom:10px}
+.h-intro .restore-all{color:var(--signal);cursor:pointer;text-decoration:underline;
+  text-underline-offset:2px}
+.hrow{display:flex;align-items:center;gap:9px;background:var(--panel-2);
+  border:1px solid var(--pline);border-left:2px solid var(--exclude);
+  border-radius:8px;padding:8px 9px}
+.hrow+.hrow{margin-top:6px}
+.hrow .hx{width:11px;height:11px;background:var(--exclude);transform:rotate(45deg);
+  border-radius:2px;flex-shrink:0}
+.hrow .hmain{flex:1;min-width:0}
+.hrow .htitle{font-size:11.5px;color:var(--t-bright);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.hrow .hreason{font-family:var(--mono);font-size:9.5px;color:var(--exclude);margin-top:2px}
+.hrow .hreason .dm{color:var(--deep)}
+.hrestore{font-family:var(--mono);font-size:9.5px;color:var(--t-dim);cursor:pointer;
+  border:1px solid var(--pline);border-radius:5px;padding:4px 8px;flex-shrink:0}
+.hrestore:hover{color:var(--t-bright);border-color:var(--t-dim)}
+.hrow.restored{border-left-color:var(--signal)}
+.hrow.restored .hx{background:var(--signal)}
+.hrow.restored .hrestore{color:var(--signal);border-color:rgba(201,242,78,.4);
+  background:rgba(201,242,78,.07)}
+
+.p-foot{border-top:1px solid var(--pline);
+  background:linear-gradient(180deg,#16171c,#101116);padding:10px 14px 11px}
+.stat+.stat{margin-top:8px}
+.stat{display:flex;align-items:center;gap:9px}
+.stat .sl{font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  color:var(--t-dim);width:96px;flex-shrink:0}
+.bar{flex:1;height:5px;border-radius:3px;background:var(--panel-4);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px}
+.bar .amber{background:linear-gradient(90deg,#8a6418,var(--deep));
+  animation:grow1 1.4s cubic-bezier(.2,.8,.2,1) .9s both}
+.bar .lime{background:var(--signal);animation:grow2 1.4s cubic-bezier(.2,.8,.2,1) 1s both}
+@keyframes grow1{from{width:0}to{width:34%}}
+@keyframes grow2{from{width:0}to{width:4%}}
+.stat .sv{font-family:var(--mono);font-size:10px;color:var(--t-mid);
+  width:74px;text-align:right;flex-shrink:0}
+.stat .sv b{color:var(--t-bright);font-weight:600}
+
+.caption{margin-top:22px;display:flex;align-items:center;gap:11px;
+  font-family:var(--mono);font-size:11.5px;color:#62646e}
+.caption .cd{width:9px;height:9px;background:var(--signal);transform:rotate(45deg);
+  border-radius:2px;box-shadow:0 0 10px rgba(201,242,78,.5)}
+.caption b{color:#9a9ca4;font-weight:500}
+
+@media(max-width:1180px){
+  .viewport{height:auto;flex-direction:column}
+  .panel{width:100%;border-left:0;border-top:1px solid #000}
+  .web{max-height:620px}
+  .li-jobs{min-height:480px}
+}
+</style>
+</head>
+<body>
+
+<div class="browser">
+
+  <div class="chrome">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="navb"><b>‹</b><b>›</b><b>⟳</b></div>
+    <div class="url">
+      <span class="lock">▲</span>
+      <span>linkedin.com</span><span class="dim">/jobs/search/?keywords=backend%20engineer</span>
+    </div>
+    <div class="exticons">
+      <div class="puzzle">⊞</div>
+      <div class="sieve-ic"><div class="di"></div><span class="badge">5</span></div>
+    </div>
+  </div>
+
+  <div class="viewport">
+
+    <!-- ============ LEFT : LinkedIn ============ -->
+    <main class="web">
+
+      <div class="li-nav">
+        <div class="li-logo">in</div>
+        <div class="li-search">⌕ Search</div>
+        <nav>
+          <div class="li-navitem"><span class="ic">🏠</span>Home</div>
+          <div class="li-navitem"><span class="ic">👥</span>Network</div>
+          <div class="li-navitem on"><span class="ic">💼</span>Jobs</div>
+          <div class="li-navitem"><span class="ic">💬</span>Messaging</div>
+          <div class="li-navitem"><span class="ic">🔔</span>Alerts</div>
+          <div class="li-navitem"><span class="li-avatar"></span>Me ▾</div>
+        </nav>
+      </div>
+
+      <div class="li-searchrow">
+        <div class="li-keys">
+          <div class="li-keyfield k1"><span class="pin">⌕</span>Backend Engineer</div>
+          <div class="li-keyfield k2"><span class="pin">⌖</span>United States</div>
+          <div class="li-go">Search</div>
+        </div>
+        <div class="li-pills">
+          <span class="li-native-lab">LinkedIn filters ▸</span>
+          <span class="li-pill">Easy Apply</span>
+          <span class="li-pill">Date posted <span class="cv">▾</span></span>
+          <span class="li-pill">Experience level <span class="cv">▾</span></span>
+          <span class="li-pill act">Remote <span class="cv">· 1</span></span>
+          <span class="li-pill">All filters</span>
+        </div>
+      </div>
+
+      <div class="li-jobs">
+
+        <!-- results list -->
+        <div class="li-list">
+          <div class="li-list-head">
+            <h2>Backend Engineer</h2>
+            <div class="rc">United States · 312 results</div>
+          </div>
+
+          <div class="joblist" id="joblist">
+
+            <article class="li-card sel">
+              <div class="li-logo" style="background:linear-gradient(135deg,#5a4fcf,#3a309e)">L</div>
+              <div class="li-cmain">
+                <h3>Senior Backend Engineer</h3>
+                <div class="li-co">Lattice Pay</div>
+                <div class="li-loc">Remote (United States)</div>
+                <div class="li-meta">
+                  <span class="li-mt">Promoted</span><span class="li-mt">· 2 days ago</span>
+                  <span class="li-app">· 89 applicants</span>
+                </div>
+              </div>
+            </article>
+
+            <div class="filt" data-id="li-hauz">
+              <div class="li-sliver">
+                <span class="xd"></span>
+                <span class="sv-co">Hauz</span>
+                <span class="sv-ti">Backend Engineer — Berlin</span>
+                <span class="reason"><span class="dm">⟂</span> description
+                  <span class="ftag">"mandatory Mandarin"</span></span>
+                <span class="restore-ip">restore</span>
+              </div>
+              <article class="li-card">
+                <div class="li-logo" style="background:linear-gradient(135deg,#9a6a3a,#6e4a26)">H</div>
+                <div class="li-cmain">
+                  <h3>Backend Engineer</h3>
+                  <div class="li-co">Hauz</div>
+                  <div class="li-loc">Berlin, Germany</div>
+                  <div class="li-meta"><span class="li-mt">3 days ago</span>
+                    <span class="li-app">· 54 applicants</span></div>
+                </div>
+              </article>
+            </div>
+
+            <article class="li-card">
+              <div class="li-logo" style="background:linear-gradient(135deg,#3a4a8c,#23306a)">C</div>
+              <div class="li-cmain">
+                <h3>Staff Backend Engineer</h3>
+                <div class="li-co">Cobalt Systems</div>
+                <div class="li-loc">Remote</div>
+                <div class="li-meta">
+                  <span class="li-ea"><span class="lk">in</span> Easy Apply</span>
+                  <span class="li-mt">· 1 day ago</span><span class="li-app">· 47 applicants</span>
+                </div>
+              </div>
+            </article>
+
+            <div class="filt" data-id="li-tian">
+              <div class="li-sliver">
+                <span class="xd"></span>
+                <span class="sv-co">Tian Systems</span>
+                <span class="sv-ti">Senior Backend Developer — Shanghai</span>
+                <span class="reason"><span class="dm">⟂</span> description
+                  <span class="ftag">"普通话"</span></span>
+                <span class="restore-ip">restore</span>
+              </div>
+              <article class="li-card">
+                <div class="li-logo" style="background:linear-gradient(135deg,#8a3a6a,#5e2649)">T</div>
+                <div class="li-cmain">
+                  <h3>Senior Backend Developer</h3>
+                  <div class="li-co">Tian Systems</div>
+                  <div class="li-loc">Shanghai, China</div>
+                  <div class="li-meta"><span class="li-mt">2 days ago</span>
+                    <span class="li-app">· 31 applicants</span></div>
+                </div>
+              </article>
+            </div>
+
+            <article class="li-card">
+              <div class="li-logo" style="background:linear-gradient(135deg,#b07f24,#7c5512)">H</div>
+              <div class="li-cmain">
+                <h3>Backend Engineer, Platform</h3>
+                <div class="li-co">Halcyon Labs</div>
+                <div class="li-loc">Remote</div>
+                <div class="li-meta"><span class="li-mt">4 hours ago</span>
+                  <span class="li-app">· 12 applicants</span></div>
+              </div>
+            </article>
+
+            <div class="filt" data-id="li-green">
+              <div class="li-sliver">
+                <span class="xd"></span>
+                <span class="sv-co">Greenfield</span>
+                <span class="sv-ti">Backend Engineer — Singapore</span>
+                <span class="reason"><span class="dm">⟂</span> description
+                  <span class="ftag">"Mandarin required"</span></span>
+                <span class="restore-ip">restore</span>
+              </div>
+              <article class="li-card">
+                <div class="li-logo" style="background:linear-gradient(135deg,#4a7a4a,#2f522f)">G</div>
+                <div class="li-cmain">
+                  <h3>Backend Engineer</h3>
+                  <div class="li-co">Greenfield</div>
+                  <div class="li-loc">Singapore</div>
+                  <div class="li-meta"><span class="li-mt">6 days ago</span>
+                    <span class="li-app">· 88 applicants</span></div>
+                </div>
+              </article>
+            </div>
+
+            <article class="li-card">
+              <div class="li-logo" style="background:linear-gradient(135deg,#4b5159,#2f343b)">V</div>
+              <div class="li-cmain">
+                <h3>Backend Engineer</h3>
+                <div class="li-co">Vault</div>
+                <div class="li-loc">Remote (United States)</div>
+                <div class="li-meta">
+                  <span class="li-ea"><span class="lk">in</span> Easy Apply</span>
+                  <span class="li-mt">· 3 days ago</span><span class="li-app">· 63 applicants</span>
+                </div>
+              </div>
+            </article>
+
+            <div class="filt" data-id="li-drift">
+              <div class="li-sliver">
+                <span class="xd"></span>
+                <span class="sv-co">Driftwood</span>
+                <span class="sv-ti">API Engineer — Remote</span>
+                <span class="reason">applicants <span class="ftag">212 · over 100</span></span>
+                <span class="restore-ip">restore</span>
+              </div>
+              <article class="li-card">
+                <div class="li-logo" style="background:linear-gradient(135deg,#4a6a8a,#2f4660)">D</div>
+                <div class="li-cmain">
+                  <h3>API Engineer</h3>
+                  <div class="li-co">Driftwood</div>
+                  <div class="li-loc">Remote</div>
+                  <div class="li-meta"><span class="li-mt">9 days ago</span>
+                    <span class="li-app">· 212 applicants</span></div>
+                </div>
+              </article>
+            </div>
+
+            <article class="li-card">
+              <div class="li-logo" style="background:linear-gradient(135deg,#3f7d4e,#275433)">L</div>
+              <div class="li-cmain">
+                <h3>Backend Engineer, Infrastructure</h3>
+                <div class="li-co">Lumen Data</div>
+                <div class="li-loc">Remote (United States)</div>
+                <div class="li-meta"><span class="li-mt">Promoted</span>
+                  <span class="li-mt">· 4 days ago</span><span class="li-app">· 71 applicants</span></div>
+              </div>
+            </article>
+
+            <div class="filt" data-id="li-metro">
+              <div class="li-sliver">
+                <span class="xd"></span>
+                <span class="sv-co">Metro Digital</span>
+                <span class="sv-ti">Backend Engineer — Remote</span>
+                <span class="reason">applicants <span class="ftag">340 · over 100</span></span>
+                <span class="restore-ip">restore</span>
+              </div>
+              <article class="li-card">
+                <div class="li-logo" style="background:linear-gradient(135deg,#7a5a8a,#4f3a5e)">M</div>
+                <div class="li-cmain">
+                  <h3>Backend Engineer</h3>
+                  <div class="li-co">Metro Digital</div>
+                  <div class="li-loc">Remote (United States)</div>
+                  <div class="li-meta"><span class="li-mt">11 days ago</span>
+                    <span class="li-app">· 340 applicants</span></div>
+                </div>
+              </article>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- job detail pane — untouched LinkedIn -->
+        <div class="li-detail">
+          <div class="li-dh">
+            <div class="li-dh-top">
+              <span class="dlogo" style="background:linear-gradient(135deg,#5a4fcf,#3a309e)">L</span>
+              Lattice Pay
+            </div>
+            <h1>Senior Backend Engineer</h1>
+            <div class="sub">Remote (United States) · 2 days ago · 89 applicants</div>
+            <div class="li-actions">
+              <div class="li-apply"><span style="font-weight:800">in</span> Easy Apply</div>
+              <div class="li-save">Save</div>
+            </div>
+          </div>
+
+          <div class="li-jd">
+            <h4>About the job</h4>
+            <p>Lattice Pay is building the payments backbone for modern fintech. We're
+              hiring a <span class="lab">Senior Backend Engineer</span> to own our ledger
+              and settlement services as we scale across new markets.</p>
+            <p><span class="lab">What you'll do:</span> design and operate high-throughput
+              services in Go and Rust; partner with product on new payment rails; and raise
+              the bar on reliability, observability, and incident response.</p>
+            <p><span class="lab">What we're looking for:</span> 6+ years building backend
+              systems at scale; deep knowledge of distributed systems and databases; and
+              strong written communication. Mandarin or Cantonese is a nice-to-have for our
+              APAC expansion, but is not required for this role.</p>
+            <p>Lattice Pay is a remote-first company. We offer competitive compensation,
+              equity, and a genuine commitment to sustainable pace.</p>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ============ RIGHT : side panel ============ -->
+    <aside class="panel">
+
+      <div class="p-head">
+        <div class="p-brand"><span class="mk"></span><h2>SIEVE</h2><span class="gear">⚙</span></div>
+        <div class="p-sub">NEGATIVE FILTERING · ANY WEB LIST</div>
+        <div class="p-conn">
+          <span class="dot"></span><span class="host">linkedin.com</span>
+          <span class="en">ENABLED ▸</span>
+        </div>
+      </div>
+
+      <div class="p-body">
+
+        <section>
+          <div class="sec-lab">PAGE</div>
+          <div class="pagecard">
+            <div class="pcrow"><span class="ok">✓</span><span>Job list detected</span>
+              <span class="v">312 results</span></div>
+            <div class="pcrow"><span class="ok">✓</span><span>Schema cached</span>
+              <span class="v">25 loaded</span></div>
+            <div class="footprint">
+              <b>◆ minimal footprint.</b> Passing jobs + the detail pane are never touched.
+              Filtered jobs collapse to a sliver — or switch Display to Hide.
+            </div>
+            <div class="scope">
+              <b>⟂ deep scan in use.</b> Descriptions live on detail pages — the description
+              filter hidden-tab-fetches each JD. Throttled hard (LinkedIn watches volume).
+            </div>
+            <div class="modesel">
+              <span class="ml">DISPLAY</span>
+              <div class="modeseg">
+                <b class="on" data-mode="collapse">collapse</b>
+                <b data-mode="hide">hide</b>
+              </div>
+            </div>
+            <div class="fields">
+              <div class="fl">DISCOVERED FIELDS</div>
+              <div class="fchips">
+                <span class="fchip used">title</span><span class="fchip">company</span>
+                <span class="fchip used">workplace type</span><span class="fchip">posted date</span>
+                <span class="fchip used">applicants</span><span class="fchip">easy apply</span>
+                <span class="fchip deep">description · deep</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="sec-lab">FILTERS <span class="ct">· 3 active</span></div>
+
+          <div class="filter exclude">
+            <div class="f-head">
+              <span class="pill ex">EXCLUDE</span>
+              <span class="f-field">job description</span>
+              <span class="f-cond">contains any</span>
+            </div>
+            <div class="phrases">
+              <span class="phrase">mandatory Mandarin <x>✕</x></span>
+              <span class="phrase">Mandarin required <x>✕</x></span>
+              <span class="phrase">普通话 <x>✕</x></span>
+              <span class="addp">+ phrase</span>
+            </div>
+            <div class="controls">
+              <span class="ctl regex" data-ctl><span class="sw"></span>regex</span>
+              <span class="ctl on" data-ctl><span class="sw"></span>deep</span>
+              <span class="save" data-save><span class="pin">♡</span>ephemeral</span>
+              <span class="removed"><b>3</b> filtered</span>
+            </div>
+          </div>
+
+          <div class="filter exclude">
+            <div class="f-head">
+              <span class="pill ex">EXCLUDE</span>
+              <span class="f-field">applicants</span>
+              <span class="f-cond">is over</span>
+            </div>
+            <div class="valbox">
+              <div class="num">100 <small>applicants</small></div>
+              <div class="track"><span class="fillb"></span><span class="knob"></span></div>
+              <div class="track-lab"><span>0</span><span>300+</span></div>
+            </div>
+            <div class="controls">
+              <span class="ctl" style="opacity:.4;cursor:default"><span class="sw"></span>deep n/a</span>
+              <span class="save saved" data-save><span class="pin">♥</span>saved</span>
+              <span class="removed"><b>2</b> filtered</span>
+            </div>
+          </div>
+
+          <div class="filter keep compact">
+            <span class="pill kp">KEEP ONLY</span>
+            <span class="f-field" style="font-size:12px">workplace</span>
+            <span class="vchip">Remote</span>
+            <span class="removed" style="color:var(--t-dim)"><b>0</b> filtered</span>
+          </div>
+
+          <button class="newfilter">+ new filter · pick a field above</button>
+        </section>
+
+        <section>
+          <div class="sec-lab">HIDDEN <span class="ct" id="hcount">· 5</span></div>
+          <div class="h-intro">Each row toggles restore ⇄ hide ·
+            <span class="restore-all" id="restoreAll">restore all</span></div>
+
+          <div class="hrow" data-restore="li-hauz">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">Backend Engineer — Hauz</div>
+              <div class="hreason"><span class="dm">⟂</span> description · "mandatory Mandarin"</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="li-tian">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">Senior Backend Developer — Tian Systems</div>
+              <div class="hreason"><span class="dm">⟂</span> description · "普通话"</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="li-green">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">Backend Engineer — Greenfield</div>
+              <div class="hreason"><span class="dm">⟂</span> description · "Mandarin required"</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="li-drift">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">API Engineer — Driftwood</div>
+              <div class="hreason">applicants · 212 over 100</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+          <div class="hrow" data-restore="li-metro">
+            <span class="hx"></span>
+            <div class="hmain"><div class="htitle">Backend Engineer — Metro Digital</div>
+              <div class="hreason">applicants · 340 over 100</div></div>
+            <span class="hrestore">restore</span>
+          </div>
+        </section>
+
+      </div>
+
+      <div class="p-foot">
+        <div class="stat">
+          <span class="sl">DEEP SCAN</span>
+          <span class="bar"><i class="amber"></i></span>
+          <span class="sv"><b id="scanN">9</b> / 25</span>
+        </div>
+        <div class="stat">
+          <span class="sl">API SPEND · TODAY</span>
+          <span class="bar"><i class="lime"></i></span>
+          <span class="sv"><b>$0.04</b> / $1.00</span>
+        </div>
+      </div>
+
+    </aside>
+
+  </div>
+</div>
+
+<div class="caption">
+  <span class="cd"></span>
+  <span><b>Sieve</b> on LinkedIn jobs — filtered jobs collapse to a sliver · detail pane
+    untouched · toggle Display, or restore ⇄ hide per row</span>
+</div>
+
+<script>
+var joblist=document.getElementById('joblist');
+document.querySelectorAll('.modeseg b').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.modeseg b').forEach(function(x){x.classList.remove('on')});
+    b.classList.add('on');
+    joblist.classList.toggle('mode-hide', b.dataset.mode==='hide');
+  });
+});
+function setState(id,restored){
+  var filt=document.querySelector('.filt[data-id="'+id+'"]');
+  if(filt) filt.classList.toggle('restored',restored);
+  var row=document.querySelector('.hrow[data-restore="'+id+'"]');
+  if(row){
+    row.classList.toggle('restored',restored);
+    row.querySelector('.hrestore').textContent=restored?'hide':'restore';
+  }
+  refresh();
+}
+function refresh(){
+  var hidden=document.querySelectorAll('.hrow:not(.restored)').length;
+  document.getElementById('hcount').textContent='· '+hidden;
+  document.getElementById('restoreAll').textContent=hidden?'restore all':'hide all';
+}
+document.querySelectorAll('.hrow').forEach(function(row){
+  row.querySelector('.hrestore').addEventListener('click',function(){
+    setState(row.dataset.restore,!row.classList.contains('restored'));
+  });
+});
+document.querySelectorAll('.filt').forEach(function(filt){
+  filt.querySelector('.li-sliver').addEventListener('click',function(){
+    setState(filt.dataset.id,true);
+  });
+  var rh=document.createElement('span');
+  rh.className='rehide';
+  rh.textContent='↺ re-hide';
+  rh.addEventListener('click',function(e){e.stopPropagation();setState(filt.dataset.id,false);});
+  filt.appendChild(rh);
+});
+document.getElementById('restoreAll').addEventListener('click',function(){
+  var toRestore=document.querySelectorAll('.hrow:not(.restored)').length>0;
+  document.querySelectorAll('.hrow').forEach(function(row){
+    setState(row.dataset.restore,toRestore);
+  });
+});
+document.querySelectorAll('.li-card').forEach(function(c){
+  c.addEventListener('click',function(){
+    document.querySelectorAll('.li-card').forEach(function(x){x.classList.remove('sel')});
+    c.classList.add('sel');
+  });
+});
+document.querySelectorAll('[data-ctl]').forEach(function(c){
+  c.addEventListener('click',function(){c.classList.toggle('on');});
+});
+document.querySelectorAll('[data-save]').forEach(function(b){
+  b.addEventListener('click',function(){
+    var on=b.classList.toggle('saved');
+    b.querySelector('.pin').textContent=on?'♥':'♡';
+    b.childNodes[b.childNodes.length-1].textContent=on?'saved':'ephemeral';
+  });
+});
+var n=9;
+var t=setInterval(function(){
+  n++; document.getElementById('scanN').textContent=n;
+  if(n>=15) clearInterval(t);
+},1500);
+</script>
+
+</body>
+</html>

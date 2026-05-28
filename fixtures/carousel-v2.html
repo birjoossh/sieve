@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Shopcast — New arrivals carousel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+        margin: 0;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 17px;
+        margin: 0 0 12px 0;
+      }
+      .carousel-track {
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+      }
+      .card {
+        flex: 0 0 200px;
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 10px;
+      }
+      .card .thumb {
+        height: 110px;
+        background: #eaeef2;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Same shape as carousel.html (.carousel-track > .card with .thumb / .title /
+         .price > .badge). Different content, different count, slight padding tweak.
+         Fingerprint must match carousel.html. -->
+    <header><h1>New arrivals</h1></header>
+
+    <section class="carousel">
+      <div class="carousel-track" data-track="new-arrivals">
+        <article class="card" data-id="n-101">
+          <div class="thumb"></div>
+          <h2 class="title">Cedar Coaster Set</h2>
+          <p class="price">$14.00 <span class="badge">New</span></p>
+        </article>
+        <article class="card" data-id="n-102">
+          <div class="thumb"></div>
+          <h2 class="title">Marble Pen Rest</h2>
+          <p class="price">$24.00 <span class="badge">New</span></p>
+        </article>
+        <article class="card" data-id="n-103">
+          <div class="thumb"></div>
+          <h2 class="title">Recycled Felt Bin</h2>
+          <p class="price">$38.00 <span class="badge">New</span></p>
+        </article>
+        <article class="card" data-id="n-104">
+          <div class="thumb"></div>
+          <h2 class="title">Brass Letter Opener</h2>
+          <p class="price">$19.00 <span class="badge">New</span></p>
+        </article>
+        <article class="card" data-id="n-105">
+          <div class="thumb"></div>
+          <h2 class="title">Walnut Picture Frame</h2>
+          <p class="price">$42.00 <span class="badge">New</span></p>
+        </article>
+        <article class="card" data-id="n-106">
+          <div class="thumb"></div>
+          <h2 class="title">Indigo Linen Napkins</h2>
+          <p class="price">$28.00 <span class="badge">New</span></p>
+        </article>
+        <article class="card" data-id="n-107">
+          <div class="thumb"></div>
+          <h2 class="title">Hand-Forged Hooks</h2>
+          <p class="price">$11.00 <span class="badge">New</span></p>
+        </article>
+        <article class="card" data-id="n-108">
+          <div class="thumb"></div>
+          <h2 class="title">Steel Plant Stand</h2>
+          <p class="price">$56.00 <span class="badge">New</span></p>
+        </article>
+      </div>
+    </section>
+  </body>
+</html>

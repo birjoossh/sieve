@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Rolecast — Open roles (week 47)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        color: #111;
+        background: #fafafa;
+        margin: 0;
+        padding: 32px 24px;
+        max-width: 760px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 16px 0;
+      }
+      .joblist {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .job {
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 14px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Same structural shape as rolecast.html (joblist > job, with title /
+         company / meta(location/comp) / snippet) but: different items,
+         different attribute values, different count, slight body-padding
+         tweak. Fingerprint must match rolecast.html since the layout is
+         the same. -->
+    <header><h1>Open roles · week 47</h1></header>
+
+    <main class="joblist" data-list-name="open-roles-2026-w47">
+      <article class="job" data-id="r2-101">
+        <h2 class="title">Principal Compiler Engineer</h2>
+        <p class="company">Quantum Sliver</p>
+        <div class="meta"><span class="location">Zurich</span><span class="comp">CHF 250k</span></div>
+        <p class="snippet">Lead the LLVM backend port; SLD experience required.</p>
+      </article>
+      <article class="job" data-id="r2-102">
+        <h2 class="title">Embedded Systems Lead</h2>
+        <p class="company">Nuvolet</p>
+        <div class="meta"><span class="location">Helsinki</span><span class="comp">€140k</span></div>
+        <p class="snippet">Drive the firmware roadmap for the Series-3 sensor line.</p>
+      </article>
+      <article class="job" data-id="r2-103">
+        <h2 class="title">Senior Designer, Brand</h2>
+        <p class="company">Mossier</p>
+        <div class="meta"><span class="location">Remote (EU)</span><span class="comp">€110k</span></div>
+        <p class="snippet">Own the visual system across web, print, and event signage.</p>
+      </article>
+      <article class="job" data-id="r2-104">
+        <h2 class="title">DevRel Manager</h2>
+        <p class="company">Pebble Stack</p>
+        <div class="meta"><span class="location">San Diego</span><span class="comp">$190k</span></div>
+        <p class="snippet">Build the community program from the ground up.</p>
+      </article>
+      <article class="job" data-id="r2-105">
+        <h2 class="title">Product Manager, ML Platform</h2>
+        <p class="company">Driftline</p>
+        <div class="meta"><span class="location">NYC</span><span class="comp">$220k</span></div>
+        <p class="snippet">Define the roadmap for the inference serving stack.</p>
+      </article>
+      <article class="job" data-id="r2-106">
+        <h2 class="title">Staff Reliability Engineer</h2>
+        <p class="company">Anvilworks</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$230k</span></div>
+        <p class="snippet">Run the SRE rotation for the data-ingest fleet.</p>
+      </article>
+      <article class="job" data-id="r2-107">
+        <h2 class="title">Distributed Systems Engineer</h2>
+        <p class="company">Halocharge</p>
+        <div class="meta"><span class="location">Austin</span><span class="comp">$200k</span></div>
+        <p class="snippet">Ship the new sharding layer for the time-series store.</p>
+      </article>
+    </main>
+  </body>
+</html>

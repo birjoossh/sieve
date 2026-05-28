@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Rolecast — Open roles (paginated)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font: 14px/1.45 system-ui, sans-serif; color: #111; background: #fafafa; margin: 0 auto; padding: 32px 24px; max-width: 760px; }
+      h1 { font-size: 18px; margin: 0 0 16px 0; font-weight: 600; }
+      .joblist { display: flex; flex-direction: column; gap: 12px; }
+      .job { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 14px 16px; }
+      .job .title { margin: 0; font-size: 15px; font-weight: 600; }
+      .job .company { margin: 2px 0 8px 0; font-size: 13px; color: #57606a; }
+      .job .meta { display: flex; gap: 12px; font-size: 12px; color: #57606a; margin-bottom: 8px; }
+      .job .snippet { margin: 0; font-size: 13px; color: #24292f; }
+      .pager { margin-top: 16px; }
+      .load-more { background: #fff; border: 1px solid #d0d7de; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <header><h1>Open roles (paginated)</h1></header>
+
+    <!-- 4.6 fixture: same shape as rolecast.html, but a "Load more" button
+         appends 5 more cards. With the Slice-1 phrase filter "Mandarin",
+         initial render yields 3 slivers; after Load more, 5. -->
+    <main class="joblist" data-list-name="open-roles-paginated">
+      <article class="job" data-id="r-001">
+        <h2 class="title">Senior Backend Engineer</h2><p class="company">Acme Robotics</p>
+        <div class="meta"><span class="location">Shanghai</span><span class="comp">$180k–$220k</span></div>
+        <p class="snippet">Mandatory Mandarin language fluency required.</p>
+      </article>
+      <article class="job" data-id="r-002">
+        <h2 class="title">Frontend Engineer, Search</h2><p class="company">Lumen Labs</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$160k–$190k</span></div>
+        <p class="snippet">Own the result-page experience across web and mobile.</p>
+      </article>
+      <article class="job" data-id="r-003">
+        <h2 class="title">Localization Engineer</h2><p class="company">Polyglot Inc.</p>
+        <div class="meta"><span class="location">Singapore</span><span class="comp">$130k–$160k</span></div>
+        <p class="snippet">Mandatory Mandarin and conversational Cantonese.</p>
+      </article>
+      <article class="job" data-id="r-004">
+        <h2 class="title">Platform SRE</h2><p class="company">Vault Cloud</p>
+        <div class="meta"><span class="location">Remote (US)</span><span class="comp">$200k–$240k</span></div>
+        <p class="snippet">Run the multi-region control plane; on-call rotation.</p>
+      </article>
+      <article class="job" data-id="r-005">
+        <h2 class="title">Engineering Manager, Payments</h2><p class="company">Hexapay</p>
+        <div class="meta"><span class="location">Taipei</span><span class="comp">$210k–$260k</span></div>
+        <p class="snippet">Lead a five-person team. Mandatory Mandarin language.</p>
+      </article>
+    </main>
+
+    <div class="pager">
+      <button type="button" class="load-more" id="load-more">Load more</button>
+    </div>
+
+    <template id="more-tpl">
+      <article class="job" data-id="r-006">
+        <h2 class="title">Data Scientist, Growth</h2><p class="company">Northwind Analytics</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$170k–$200k</span></div>
+        <p class="snippet">Causal inference on subscription funnels.</p>
+      </article>
+      <article class="job" data-id="r-007">
+        <h2 class="title">Open Source Contributor</h2><p class="company">RustForge Collective</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$0 (volunteer)</span></div>
+        <p class="snippet">Volunteer / unpaid maintainership of two core crates.</p>
+      </article>
+      <article class="job" data-id="r-008">
+        <h2 class="title">Staff iOS Engineer</h2><p class="company">Tessellate</p>
+        <div class="meta"><span class="location">London</span><span class="comp">£140k–£170k</span></div>
+        <p class="snippet">Ship the next generation of our drawing engine.</p>
+      </article>
+      <article class="job" data-id="r-009">
+        <h2 class="title">Research Intern, NLP</h2><p class="company">Mensa Labs</p>
+        <div class="meta"><span class="location">Berlin</span><span class="comp">stipend</span></div>
+        <p class="snippet">Three-month internship. Mandatory Mandarin for collaboration with HQ.</p>
+      </article>
+      <article class="job" data-id="r-010">
+        <h2 class="title">DevRel Engineer</h2><p class="company">Hubble Cloud</p>
+        <div class="meta"><span class="location">Remote</span><span class="comp">$185k–$225k</span></div>
+        <p class="snippet">Run office hours; write tutorials; conference circuit.</p>
+      </article>
+    </template>
+
+    <script>
+      // Append 5 more articles when the button is clicked. We use
+      // appendChild one-at-a-time so the MutationObserver test exercises
+      // the "5 separate mutations" branch — single batch via DocumentFragment
+      // is the common case and 4.6's debounce handles both equivalently.
+      document.getElementById('load-more').addEventListener('click', () => {
+        const tpl = document.getElementById('more-tpl');
+        const list = document.querySelector('.joblist');
+        const articles = tpl.content.querySelectorAll('article');
+        articles.forEach((a) => list.appendChild(a.cloneNode(true)));
+        document.getElementById('load-more').remove();
+      });
+    </script>
+  </body>
+</html>
