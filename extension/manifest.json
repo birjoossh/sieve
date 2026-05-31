@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Negative Filter",
+  "name": "Sieve",
   "version": "0.0.1",
   "description": "Hide items that fail your filters from any list / carousel / grid.",
   "permissions": ["sidePanel", "tabs", "scripting", "alarms", "storage"],
@@ -13,6 +13,6 @@
     "default_path": "panel.html"
   },
   "action": {
-    "default_title": "Negative Filter"
+    "default_title": "Sieve"
   }
 }

@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, '..', 'dist');
 
-const LOG_PREFIX = '[negative-filter] SW round-trip';
+const LOG_PREFIX = '[sieve] SW round-trip';
 
 test.describe('0.5 — content script round-trips with SW', () => {
   let context: BrowserContext;
@@ -90,7 +90,7 @@ test.describe('0.5 — content script round-trips with SW', () => {
     page.on('console', (m) => {
       if (m.type() !== 'error') return;
       const text = m.text();
-      if (!text.includes('[negative-filter]')) return;
+      if (!text.includes('[sieve]')) return;
       // The Slice-3 production wire-up runs `tryDiscover()` whenever
       // the stub schema doesn't match the page. On panel.html (this
       // injection target) with no API key configured, the LLM

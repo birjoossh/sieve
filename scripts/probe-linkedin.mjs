@@ -24,6 +24,21 @@ try {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
     viewport: { width: 1280, height: 900 },
   });
+  if (process.env.LI_AT) {
+    await ctx.addCookies([
+      {
+        name: 'li_at',
+        value: process.env.LI_AT,
+        domain: '.linkedin.com',
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'None',
+        expires: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
+      },
+    ]);
+    console.log('[auth] li_at cookie set');
+  }
   const page = await ctx.newPage();
   page.on('console', (m) => console.log(`[page ${m.type()}]`, m.text()));
 
@@ -79,6 +94,18 @@ try {
     if (!detected) return { detected: null };
     const layout = nf.classify(detected);
     const fp = nf.fingerprintItemSet(detected);
+    // Walk up from a known job card to see the actual hierarchy.
+    const card = document.querySelector('li.scaffold-layout__list-item, li[data-occludable-job-id]');
+    const chain = [];
+    let el = card;
+    while (el && chain.length < 6) {
+      chain.push({
+        tag: el.tagName.toLowerCase(),
+        id: el.id || null,
+        classes: Array.from(el.classList).slice(0, 6),
+      });
+      el = el.parentElement;
+    }
     return {
       tag: detected.tagName.toLowerCase(),
       classList: Array.from(detected.classList),
@@ -87,6 +114,29 @@ try {
       fingerprint: fp,
       firstChild: detected.firstElementChild?.tagName.toLowerCase() ?? null,
       firstChildClass: Array.from(detected.firstElementChild?.classList ?? []).slice(0, 6),
+      stableSelectorCounts: {
+        '.scaffold-layout__list-container': document.querySelectorAll('.scaffold-layout__list-container').length,
+        '.scaffold-layout__list': document.querySelectorAll('.scaffold-layout__list').length,
+        'li.scaffold-layout__list-item': document.querySelectorAll('li.scaffold-layout__list-item').length,
+        'li[data-occludable-job-id]': document.querySelectorAll('li[data-occludable-job-id]').length,
+        'ul:has(> li[data-occludable-job-id])': document.querySelectorAll('ul:has(> li[data-occludable-job-id])').length,
+        'ul.scaffold-layout__list-container': document.querySelectorAll('ul.scaffold-layout__list-container').length,
+        '.jobs-search-results-list': document.querySelectorAll('.jobs-search-results-list').length,
+      },
+      // Sample text from the first card's stub-schema field selectors so we
+      // can sanity-check filter matching offline.
+      firstCardFieldSamples: (() => {
+        const c = document.querySelector('li[data-occludable-job-id]');
+        if (!c) return null;
+        const txt = (sel) => c.querySelector(sel)?.textContent?.trim().slice(0, 120) ?? null;
+        return {
+          title: txt('.job-card-list__title, .artdeco-entity-lockup__title, a[aria-label]'),
+          company: txt('.job-card-container__primary-description, .artdeco-entity-lockup__subtitle'),
+          location: txt('.job-card-container__metadata-wrapper, .job-card-container__metadata-item, .artdeco-entity-lockup__caption'),
+          snippet: (c.textContent ?? '').trim().slice(0, 160),
+        };
+      })(),
+      cardChainUp: chain,
     };
   });
   console.log('\n--- detect/fingerprint result ---');

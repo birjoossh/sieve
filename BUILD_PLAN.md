@@ -1,4 +1,4 @@
-# Negative Filter — Implementation Plan
+# Sieve — Implementation Plan
 
 Concrete implementation plan for the design in `DESIGN.md` (17 decisions). Seven vertical
 tracer-bullet slices — each demoable end-to-end. This plan adds the module map, data

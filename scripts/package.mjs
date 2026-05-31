@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/package.mjs — build the Web Store-ready zip.
 //
-// Bundles dist/ (built by esbuild) into out/negative-filter-<v>.zip.
+// Bundles dist/ (built by esbuild) into out/sieve-<v>.zip.
 // The version comes from manifest.json. Uses the system `zip`
 // command — present on macOS / Linux dev machines.
 
@@ -24,7 +24,7 @@ async function main() {
   if (!version) throw new Error('manifest.json has no version');
   const outDir = resolve(ROOT, 'out');
   await mkdir(outDir, { recursive: true });
-  const outZip = resolve(outDir, `negative-filter-${version}.zip`);
+  const outZip = resolve(outDir, `sieve-${version}.zip`);
   // -X strips macOS .DS_Store + extra fields; -r recurses; -j is NOT
   // used so the dir structure is preserved.
   execFileSync('zip', ['-X', '-r', outZip, '.', '-i', '*'], {

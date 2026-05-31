@@ -43,7 +43,7 @@ test.describe('6.5 — Web Store packaging', () => {
     const manifest = JSON.parse(
       readFileSync(resolve(ROOT, 'dist', 'manifest.json'), 'utf8'),
     ) as Record<string, unknown>;
-    const zipPath = resolve(ROOT, 'out', `negative-filter-${manifest['version']}.zip`);
+    const zipPath = resolve(ROOT, 'out', `sieve-${manifest['version']}.zip`);
     expect(existsSync(zipPath)).toBe(true);
 
     // Unzip into a tmpdir and validate the extracted manifest.

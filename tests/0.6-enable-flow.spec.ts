@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROD_DIST = resolve(__dirname, '..', 'dist');
-const LOG_PREFIX = '[negative-filter] SW round-trip';
+const LOG_PREFIX = '[sieve] SW round-trip';
 
 /** Copy production dist → tmp, then promote `<all_urls>` from optional to
  *  required so the permission prompt doesn't fire. Returns the tmp dir

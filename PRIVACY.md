@@ -1,8 +1,8 @@
-# Negative Filter — Privacy Policy
+# Sieve — Privacy Policy
 
 _Last updated: 2026-05-25_
 
-Negative Filter is an open-source Chrome extension that hides items on
+Sieve is an open-source Chrome extension that hides items on
 the pages you visit. It is designed to keep your data on your device.
 
 ## Data we store on your device

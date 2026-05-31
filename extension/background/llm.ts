@@ -351,16 +351,13 @@ function validateSchemaShape(
     source: 'llm',
     discoveredAt: now,
   };
-  if ('detailLinkSelector' in r && r['detailLinkSelector'] !== undefined) {
-    if (!isNonEmptyString(r['detailLinkSelector'])) {
-      throw new SchemaParseError('detailLinkSelector present but not a string', raw);
-    }
+  // Optional fields: drop silently when the model emits the wrong shape
+  // (e.g. null, {}). The required core (layout/selectors/fields) is what
+  // gates discovery; losing detail navigation is degradation, not failure.
+  if ('detailLinkSelector' in r && isNonEmptyString(r['detailLinkSelector'])) {
     schema.detailLinkSelector = r['detailLinkSelector'];
   }
-  if ('detailFieldSelectors' in r && r['detailFieldSelectors'] !== undefined) {
-    if (!isStringRecord(r['detailFieldSelectors'])) {
-      throw new SchemaParseError('detailFieldSelectors must be string→string', raw);
-    }
+  if ('detailFieldSelectors' in r && isStringRecord(r['detailFieldSelectors'])) {
     schema.detailFieldSelectors = r['detailFieldSelectors'];
   }
   return schema;

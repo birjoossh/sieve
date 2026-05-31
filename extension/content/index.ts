@@ -31,7 +31,7 @@ import {
   type Schema,
 } from '../shared/types.js';
 
-const LOG_PREFIX = '[negative-filter]';
+const LOG_PREFIX = '[sieve]';
 
 interface PageContext {
   schema: Schema;
@@ -70,7 +70,7 @@ async function hydrateSavedFilters(c: PageContext): Promise<void> {
       fingerprint: c.schema.fingerprint,
     });
   } catch (err) {
-    console.error('[negative-filter] loadSavedFilters failed:', err);
+    console.error('[sieve] loadSavedFilters failed:', err);
   }
 }
 

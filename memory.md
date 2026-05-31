@@ -1,4 +1,4 @@
-# Memory — Negative Filter
+# Memory — Sieve
 
 Lessons learned during the build. Most recent on top. Per project CLAUDE.md: any
 finding worth saving the next session a re-derivation goes here.
@@ -29,7 +29,7 @@ pass `chromeStorageSpendChecker()` from the SW handler.
 
 **0.5 spec gotcha:** injecting content.js into panel.html fires
 `tryDiscover()` which logs a "discover failed: no-api-key" error
-into the panel's console. The 0.5 spec's "no [negative-filter]
+into the panel's console. The 0.5 spec's "no [sieve]
 errors" assertion needs to filter that specific line — it's
 out-of-scope for 0.5's SW-round-trip contract.
 

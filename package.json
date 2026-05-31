@@ -1,5 +1,5 @@
 {
-  "name": "negative-filter",
+  "name": "sieve",
   "version": "0.0.1",
   "private": true,
   "description": "Chrome MV3 extension that hides items that fail your filters from any list / carousel / grid.",

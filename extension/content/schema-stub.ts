@@ -28,7 +28,40 @@ export const ROLECAST_STUB_SCHEMA: Schema = {
   discoveredAt: 0,
 };
 
-const ALL_STUBS: readonly Schema[] = [ROLECAST_STUB_SCHEMA];
+// LinkedIn's CSS Modules build hashes class names per deploy, so any LLM
+// discovery latches onto transient selectors (verified 2026-05 against a
+// real /jobs/collections/recommended page). The `<ul>` itself only carries
+// a hashed class — but every job card `<li>` keeps the stable
+// `scaffold-layout__list-item` class and a `data-occludable-job-id`
+// attribute LinkedIn uses for its own virtualisation. `:has()` lets us
+// anchor on those, working around the hashed parent.
+export const LINKEDIN_JOBS_STUB_SCHEMA: Schema = {
+  fingerprint: 'linkedin:jobs:v1',
+  layout: 'list',
+  itemSetSelector: 'ul:has(> li[data-occludable-job-id])',
+  itemSelector: 'li[data-occludable-job-id]',
+  fields: {
+    title: {
+      kind: 'text',
+      selector: '.job-card-list__title, .artdeco-entity-lockup__title, a[aria-label]',
+    },
+    company: {
+      kind: 'text',
+      selector:
+        '.job-card-container__primary-description, .artdeco-entity-lockup__subtitle',
+    },
+    location: {
+      kind: 'text',
+      selector:
+        '.job-card-container__metadata-wrapper, .job-card-container__metadata-item, .artdeco-entity-lockup__caption',
+    },
+    snippet: { kind: 'text', selector: '.job-card-container, .artdeco-entity-lockup' },
+  },
+  source: 'stub',
+  discoveredAt: 0,
+};
+
+const ALL_STUBS: readonly Schema[] = [ROLECAST_STUB_SCHEMA, LINKEDIN_JOBS_STUB_SCHEMA];
 
 /** Pick the first stub whose item-set selector matches the document. Returns
  *  null when nothing in our hand-written set fits. Slice 2 supplants this

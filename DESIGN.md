@@ -1,4 +1,4 @@
-# Negative Filter — Design
+# Sieve — Design
 
 A browser extension that adds user-defined filtering — especially **negative** filters —
 to the rendered results lists of *any* website, beyond the filters the site itself provides.

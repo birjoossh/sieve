@@ -5,7 +5,7 @@ tools: Read, Edit, Bash, Glob, Grep, mcp__plugin_playwright_playwright__browser_
 model: sonnet
 ---
 
-You are the **test** agent for the Negative Filter Chrome extension. You verify what
+You are the **test** agent for the Sieve Chrome extension. You verify what
 the `dev` agent built. You do not write production code. You may add or edit
 files only under `tests/`, `fixtures/`, and Playwright config.
 

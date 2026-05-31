@@ -197,7 +197,7 @@ async function pushFilters(): Promise<void> {
       filters,
     });
   } catch (err) {
-    console.error('[negative-filter] setFilters failed:', err);
+    console.error('[sieve] setFilters failed:', err);
   }
 }
 
@@ -228,7 +228,7 @@ async function pushMode(mode: DisplayMode): Promise<void> {
       mode,
     });
   } catch (err) {
-    console.error('[negative-filter] setDisplayMode failed:', err);
+    console.error('[sieve] setDisplayMode failed:', err);
   }
   render();
 }
@@ -243,7 +243,7 @@ async function pushItemRestored(id: string, restored: boolean): Promise<void> {
       restored,
     });
   } catch (err) {
-    console.error('[negative-filter] setItemRestored failed:', err);
+    console.error('[sieve] setItemRestored failed:', err);
   }
 }
 
@@ -264,7 +264,7 @@ async function handleEnable(origin: string): Promise<void> {
   if (!granted) return;
   const reply = await sendToSw({ t: 'enableDomain', v: MESSAGE_VERSION, origin });
   if (reply.t === 'err') {
-    console.error('[negative-filter] enableDomain failed:', reply.message);
+    console.error('[sieve] enableDomain failed:', reply.message);
     return;
   }
   void refresh();
@@ -273,7 +273,7 @@ async function handleEnable(origin: string): Promise<void> {
 async function handleDisable(origin: string): Promise<void> {
   const reply = await sendToSw({ t: 'disableDomain', v: MESSAGE_VERSION, origin });
   if (reply.t === 'err') {
-    console.error('[negative-filter] disableDomain failed:', reply.message);
+    console.error('[sieve] disableDomain failed:', reply.message);
     return;
   }
   await chrome.permissions
@@ -439,7 +439,7 @@ async function handleDismissDeepWarning(): Promise<void> {
   try {
     await dismissDeepWarning();
   } catch (err) {
-    console.error('[negative-filter] dismissDeepWarning failed:', err);
+    console.error('[sieve] dismissDeepWarning failed:', err);
   }
   state.deepWarningDismissed = true;
   state.deepModalOpen = false;
@@ -470,7 +470,7 @@ async function handleExportFilters(): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `negative-filter-export-${Date.now()}.json`;
+  a.download = `sieve-export-${Date.now()}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -485,7 +485,7 @@ async function handleImportFilters(file: File): Promise<void> {
     const text = await file.text();
     env = parseExport(text);
   } catch (err) {
-    console.error('[negative-filter] import failed:', err);
+    console.error('[sieve] import failed:', err);
     return;
   }
   for (const [fp, set] of Object.entries(env.sets)) {
@@ -556,7 +556,7 @@ function render(): void {
               force: payload.force,
             });
           } catch (err) {
-            console.error('[negative-filter] rediscover failed:', err);
+            console.error('[sieve] rediscover failed:', err);
           }
         })();
       },

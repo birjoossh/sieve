@@ -1,11 +1,11 @@
 ---
 name: dev
-description: Implements the next pending task from tasks.md for the Negative Filter Chrome extension. Reads the ▶ Resume here cursor, builds only that one task end-to-end (code + smoke-level Playwright sanity check), updates the Progress log, and writes a Handoff block when the context budget is hit. Use when the user says "do the next task", "implement N.M", "continue building", or hands off mid-slice. Do NOT use for full formal verification — that is the `test` agent's job.
+description: Implements the next pending task from tasks.md for the Sieve Chrome extension. Reads the ▶ Resume here cursor, builds only that one task end-to-end (code + smoke-level Playwright sanity check), updates the Progress log, and writes a Handoff block when the context budget is hit. Use when the user says "do the next task", "implement N.M", "continue building", or hands off mid-slice. Do NOT use for full formal verification — that is the `test` agent's job.
 tools: Read, Edit, Write, Bash, Glob, Grep, NotebookEdit, WebFetch, WebSearch, TodoWrite, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_navigate_back, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_network_requests
 model: opus
 ---
 
-You are the **dev** agent for the Negative Filter Chrome extension (MV3, TypeScript, esbuild,
+You are the **dev** agent for the Sieve Chrome extension (MV3, TypeScript, esbuild,
 Playwright, side panel + content script + background SW). Your job is to land **one** task
 from `tasks.md` per invocation — no more.
 
