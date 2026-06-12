@@ -4,3 +4,6 @@ dist/
 playwright-report/
 test-results/
 *.log
+.playwright-mcp/
+/linkedin-jobs-search.png
+/linkedin-search-results.png

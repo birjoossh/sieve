@@ -1,0 +1,85 @@
+CHROME WEB STORE LISTING — Negative Filter
+============================================
+
+Name: Negative Filter
+Category: Productivity > Workflow & Planning
+Language: English
+
+--- Summary (132 chars max) ---
+Hide what you don't want to see. Filter any list, feed, or grid — job boards, search results, news — with your own keywords.
+
+--- Description ---
+Negative Filter removes the noise from any page with repeating items: job
+boards, search results, news feeds, marketplaces. Tell it what you DON'T
+want to see, and matching items collapse into a slim one-line bar you can
+restore with a click.
+
+WORKS EVERYWHERE
+• Detects lists, carousels, and grids automatically on any site you enable
+• Built-in support for LinkedIn Jobs (both layouts), plus a general
+  detector for everything else
+• Survives infinite scroll, virtualized lists, and single-page navigation
+
+YOUR FILTERS, YOUR RULES
+• Hide by keyword or phrase — matches the item's full text, and on
+  supported sites the full description behind the card
+• Numeric filters (e.g. compensation below a threshold)
+• Save filters per site layout — they re-apply automatically
+• Export / import your filter sets as JSON
+• Restore any hidden item with one click; per-tab hidden count on the
+  toolbar badge
+
+PRIVATE BY DESIGN
+• No account, no sign-up, no tracking, no analytics
+• Keyword filtering is fully local — works offline, no AI key needed
+• Optional: bring your own LLM API key (Anthropic or OpenAI) to unlock
+  named-field detection and phrase suggestions. Only a redacted,
+  content-free skeleton of the page structure ever leaves your browser —
+  never page text, URLs, or anything personal. A built-in spend cap
+  limits calls per day and per month.
+• Per-site opt-in: the extension only runs on origins you explicitly
+  enable, and you can revoke any site at any time
+
+Open source: https://github.com/birjoossh/sieve
+
+--- Single purpose (review form) ---
+Hides user-specified items from repeating-item pages (lists, feeds,
+grids) on sites the user explicitly enables.
+
+--- Permissions justification (review form) ---
+• sidePanel: the filter UI lives in Chrome's side panel
+• tabs: show the active site's hostname on the Enable button before any
+  host permission is granted
+• scripting: inject the content script on origins the user enables
+• storage: persist filters, settings, and the spend ledger locally
+• alarms: resume queued background work after service-worker restarts
+• optional_host_permissions <all_urls>: per-site opt-in at user gesture;
+  no host access is granted at install
+
+--- Data usage disclosures (review form) ---
+• Does NOT collect or transmit user data to the developer. No analytics.
+• "Website content" (a structure-only, content-redacted DOM skeleton) is
+  sent to the user's own chosen LLM provider, only when the user clicks
+  Re-discover or Suggest, using the user's own API key. Declare under
+  "Website content", purpose: app functionality, not sold, not shared
+  with third parties beyond the user-chosen provider.
+Privacy policy URL: https://github.com/birjoossh/sieve/blob/main/PRIVACY.md
+
+--- Assets ---
+Icon (store): 128 px — extension/icons/icon128.png
+Screenshots (1280x800, upload in this order):
+  1. panel-hero-1280x800.png      — hero: panel + tagline
+  2. hn-filtered-1280x800.png     — real site, items collapsed
+  3. github-filtered-1280x800.png — second real site
+Small promo tile (440x280):  tile-small-440x280.png
+Marquee promo tile (1400x560): marquee-1400x560.png
+
+--- Submission checklist ---
+[ ] npm run package → upload out/negative-filter-<v>.zip
+[ ] Paste Summary + Description above
+[ ] Category: Productivity > Workflow & Planning
+[ ] Upload 3 screenshots + small tile + marquee
+[ ] Single-purpose statement + permission justifications (above)
+[ ] Privacy tab: privacy-policy URL + data-usage disclosures (above)
+[ ] Verify contact email in the developer dashboard
+[ ] Account: pay one-time $5 developer fee if not already registered

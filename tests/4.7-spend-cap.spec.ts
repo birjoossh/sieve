@@ -204,6 +204,8 @@ test.describe('4.7 — spend cap (UI layer)', () => {
           monthlyEpoch: month,
           monthlyCount: 200,
         },
+        // The usage meter only renders when a provider key is configured.
+        'nf:llm-settings': { provider: 'anthropic', apiKey: 'sk-test-spend-cap' },
       });
     });
 

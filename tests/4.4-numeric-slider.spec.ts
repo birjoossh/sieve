@@ -44,13 +44,13 @@ test.describe('4.4 — numeric slider editor', () => {
     await env.panel.locator('input[data-input="numeric-enabled"]').check();
 
     // Op defaults to lessThan → 3 cards under 150k get filtered.
-    await expect(env.panel.locator('[data-role="numeric-readout"]')).toHaveText('150 k$');
+    await expect(env.panel.locator('[data-role="numeric-readout"]')).toHaveText('$150k');
     await expect(env.fixture.locator('.sliver')).toHaveCount(3);
 
     // Drag the slider higher → more cards drop out. fill() on a
     // type=range fires 'input', which is what our editor listens for.
     await env.panel.locator('input[data-input="numeric-value"]').fill('200');
-    await expect(env.panel.locator('[data-role="numeric-readout"]')).toHaveText('200 k$');
+    await expect(env.panel.locator('[data-role="numeric-readout"]')).toHaveText('$200k');
     await expect(env.fixture.locator('.sliver')).toHaveCount(7);
 
     // Flip the op to greaterThan at the same value → inverts the

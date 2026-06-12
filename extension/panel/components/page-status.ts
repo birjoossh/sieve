@@ -8,8 +8,11 @@
 //
 // Slice 3.5: a "Re-discover" button + an inline hint input. Clicking
 // invokes `onRediscover({ hint, force: true })` so the orchestrator
-// bypasses cache and forwards the hint into the LLM prompt. The button is
-// only shown when there's a schema to re-discover against.
+// bypasses cache and forwards the hint into the LLM prompt. The block
+// renders with or without a schema — the missing-schema error row points
+// users here, and gating it on a schema made that advice a dead-end on
+// exactly the pages that need it (content handles `rediscover` without a
+// ctx by re-running discovery from scratch).
 
 import type { DisplayMode, Schema } from '../../shared/types.js';
 
@@ -41,31 +44,41 @@ export function renderPageStatus(host: HTMLElement, state: PageStatusState): voi
   if (state.schema) {
     status.textContent = `Detected: ${state.schema.layout} · ${state.itemCount} item${state.itemCount === 1 ? '' : 's'}`;
   } else {
-    status.textContent = 'No list detected.';
+    status.textContent = 'No list detected yet.';
   }
   host.appendChild(status);
 
-  if (!state.schema) return;
+  if (state.schema) {
+    const modeRow = document.createElement('div');
+    modeRow.className = 'mode-row';
 
-  const toggle = document.createElement('div');
-  toggle.className = 'mode-toggle';
-  toggle.dataset['role'] = 'display-mode';
-  toggle.setAttribute('role', 'group');
-  toggle.setAttribute('aria-label', 'Display mode');
+    const modeLabel = document.createElement('span');
+    modeLabel.className = 'mode-row-label';
+    modeLabel.id = 'display-mode-label';
+    modeLabel.textContent = 'Hidden items';
+    modeRow.appendChild(modeLabel);
 
-  for (const m of ['collapse', 'hide'] as const) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'mode-btn';
-    btn.dataset['mode'] = m;
-    btn.textContent = m === 'collapse' ? 'Collapse' : 'Hide';
-    btn.setAttribute('aria-pressed', String(state.mode === m));
-    if (state.mode === m) btn.classList.add('active');
-    btn.onclick = () => state.onModeChange(m);
-    toggle.appendChild(btn);
+    const toggle = document.createElement('div');
+    toggle.className = 'mode-toggle';
+    toggle.dataset['role'] = 'display-mode';
+    toggle.setAttribute('role', 'group');
+    toggle.setAttribute('aria-label', 'Display mode');
+
+    for (const m of ['collapse', 'hide'] as const) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mode-btn';
+      btn.dataset['mode'] = m;
+      btn.textContent = m === 'collapse' ? 'Collapse' : 'Hide';
+      btn.setAttribute('aria-pressed', String(state.mode === m));
+      if (state.mode === m) btn.classList.add('active');
+      btn.onclick = () => state.onModeChange(m);
+      toggle.appendChild(btn);
+    }
+
+    modeRow.appendChild(toggle);
+    host.appendChild(modeRow);
   }
-
-  host.appendChild(toggle);
 
   if (state.onRediscover) {
     const rediscoverHandler = state.onRediscover;
@@ -73,16 +86,27 @@ export function renderPageStatus(host: HTMLElement, state: PageStatusState): voi
     rediscover.className = 'rediscover';
     rediscover.dataset['role'] = 'rediscover';
 
+    const help = document.createElement('p');
+    help.className = 'hint';
+    help.textContent = state.schema
+      ? 'Wrong or missing items? Re-run detection — a short hint about the layout helps.'
+      : 'Point detection at the list — a short hint like “job cards in the main column” helps.';
+    rediscover.appendChild(help);
+
+    const row = document.createElement('div');
+    row.className = 'rediscover-row';
+
     const hintInput = document.createElement('input');
     hintInput.type = 'text';
     hintInput.dataset['input'] = 'rediscover-hint';
-    hintInput.placeholder = 'Hint (optional, e.g. "title is in the h3")';
-    hintInput.className = 'rediscover-hint';
-    rediscover.appendChild(hintInput);
+    hintInput.placeholder = 'e.g. “title is in the h3”';
+    hintInput.className = 'rediscover-hint input';
+    hintInput.setAttribute('aria-label', 'Re-discover hint');
+    row.appendChild(hintInput);
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'rediscover-btn';
+    btn.className = 'rediscover-btn btn btn-secondary';
     btn.dataset['action'] = 'rediscover';
     btn.textContent = 'Re-discover';
     btn.addEventListener('click', () => {
@@ -91,8 +115,9 @@ export function renderPageStatus(host: HTMLElement, state: PageStatusState): voi
       if (hint !== '') payload.hint = hint;
       rediscoverHandler(payload);
     });
-    rediscover.appendChild(btn);
+    row.appendChild(btn);
 
+    rediscover.appendChild(row);
     host.appendChild(rediscover);
   }
 }

@@ -2,10 +2,10 @@
 // numeric Slice-4.1 predicates (`lessThan` / `greaterThan`).
 //
 // The Slice-1 chip editor handles `containsAny`. 4.4 adds the structured-
-// value pair for numeric fields: a slider with a units suffix, a `<`/`>`
-// op toggle, and an enable checkbox. The hosting panel pushes a second
-// Filter whenever the editor is enabled; the engine ANDs it with the
-// phrase filter per 4.3.
+// value pair for numeric fields: a slider with a formatted readout, a
+// below/above op toggle, and an enable checkbox. The hosting panel pushes
+// a second Filter whenever the editor is enabled; the engine ANDs it with
+// the phrase filter per 4.3.
 //
 // Scope kept narrow on purpose: one numeric filter, field hardcoded to
 // `comp` (the only numeric field on the rolecast stub). Field picker +
@@ -29,9 +29,13 @@ export interface NumericFilterValue {
 export interface NumericFilterState {
   enabled: boolean;
   current: NumericFilterValue;
-  /** Display unit suffix appended to the slider readout — "k$",
-   *  "years", "kg", etc. Stored on the filter row, not the schema. */
-  unit: string;
+  /** Humanized field label for the enable row — "Comp", "Price", … The
+   *  raw schema field name never reaches the UI. */
+  label: string;
+  /** Formats the slider readout — e.g. 150 → "$150k". Owned by the
+   *  caller because the unit shape is field knowledge, not widget
+   *  knowledge. */
+  format: (value: number) => string;
   /** Slider range. Inclusive on both ends. */
   min: number;
   max: number;
@@ -40,8 +44,8 @@ export interface NumericFilterState {
 }
 
 const OP_LABELS: Record<NumericOp, string> = {
-  lessThan: '<',
-  greaterThan: '>',
+  lessThan: 'below',
+  greaterThan: 'above',
 };
 
 export function renderNumericFilter(host: HTMLElement, state: NumericFilterState): void {
@@ -55,7 +59,7 @@ export function renderNumericFilter(host: HTMLElement, state: NumericFilterState
   if (!state.enabled) {
     const p = document.createElement('p');
     p.className = 'section-meta';
-    p.textContent = 'Enable a site with numeric fields to filter.';
+    p.textContent = 'Available when the detected list has numeric fields.';
     host.appendChild(p);
     return;
   }
@@ -73,18 +77,22 @@ export function renderNumericFilter(host: HTMLElement, state: NumericFilterState
     state.onChange({ ...state.current, enabled: enableInput.checked });
   };
   enableRow.appendChild(enableInput);
-  enableRow.appendChild(document.createTextNode(' Filter by comp'));
+  const enableText = document.createElement('span');
+  enableText.textContent = `Filter by ${state.label}`;
+  enableRow.appendChild(enableText);
   host.appendChild(enableRow);
 
   const sliderRow = document.createElement('div');
   sliderRow.className = 'numeric-row';
   sliderRow.dataset['role'] = 'numeric-slider-row';
 
-  // Op select — `<` or `>`. (We model the polarity at the Filter level
-  // — exclude. So "< 200" reads "exclude comp under 200".)
+  // Op select — hide items below / above the threshold. (We model the
+  // polarity at the Filter level — exclude. So "below $200k" reads
+  // "exclude items whose value is under 200".)
   const opSelect = document.createElement('select');
-  opSelect.className = 'numeric-op';
+  opSelect.className = 'numeric-op select';
   opSelect.dataset['input'] = 'numeric-op';
+  opSelect.setAttribute('aria-label', `Hide ${state.label} below or above`);
   for (const op of ['lessThan', 'greaterThan'] as const) {
     const opt = document.createElement('option');
     opt.value = op;
@@ -101,6 +109,7 @@ export function renderNumericFilter(host: HTMLElement, state: NumericFilterState
   slider.type = 'range';
   slider.className = 'numeric-slider';
   slider.dataset['input'] = 'numeric-value';
+  slider.setAttribute('aria-label', `${state.label} threshold`);
   slider.min = String(state.min);
   slider.max = String(state.max);
   slider.step = String(state.step);
@@ -108,7 +117,7 @@ export function renderNumericFilter(host: HTMLElement, state: NumericFilterState
   slider.oninput = () => {
     const n = Number(slider.value);
     if (Number.isFinite(n)) {
-      readout.textContent = `${n} ${state.unit}`;
+      readout.textContent = state.format(n);
       state.onChange({ ...state.current, value: n });
     }
   };
@@ -117,7 +126,7 @@ export function renderNumericFilter(host: HTMLElement, state: NumericFilterState
   const readout = document.createElement('span');
   readout.className = 'numeric-readout';
   readout.dataset['role'] = 'numeric-readout';
-  readout.textContent = `${state.current.value} ${state.unit}`;
+  readout.textContent = state.format(state.current.value);
   sliderRow.appendChild(readout);
 
   host.appendChild(sliderRow);

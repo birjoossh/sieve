@@ -41,10 +41,18 @@ import { Throttler } from '../../extension/background/throttle.js';
 import { extractDetailFields, isDetailPage } from '../../extension/content/detail.js';
 import { ViewportEnqueuer } from '../../extension/content/viewport-enqueuer.js';
 import { safeCompileRegex, UnsafeRegexError } from '../../extension/shared/safe-regex.js';
-import { discover } from '../../extension/content/discover.js';
+import { buildLocalSchema, discover } from '../../extension/content/discover.js';
 import { renderPageStatus } from '../../extension/panel/components/page-status.js';
-import { classify, detect, generalize } from '../../extension/content/detect.js';
+import { classify, detect, generalize, localizeItemSet } from '../../extension/content/detect.js';
+import {
+  DeepTextScanner,
+  fetchDetailText,
+  itemDetailUrl,
+  stripHtml,
+} from '../../extension/content/deep-text.js';
 import { evaluate, findItems, type ItemVerdict } from '../../extension/content/engine.js';
+import { suggestFromItems } from '../../extension/content/suggest.js';
+import { MutationWatcher } from '../../extension/content/mutations.js';
 import { fingerprintItemSet } from '../../extension/content/fingerprint.js';
 import { Picker } from '../../extension/content/picker.js';
 import { Renderer } from '../../extension/content/renderer.js';
@@ -54,10 +62,16 @@ import {
 } from '../../extension/content/schema-stub.js';
 import type { Filter, Schema } from '../../extension/shared/types.js';
 
-interface TestbedAPI {
+export interface TestbedAPI {
   chromeStorageSchemaCache: typeof chromeStorageSchemaCache;
   classify: typeof classify;
   detect: typeof detect;
+  localizeItemSet: typeof localizeItemSet;
+  buildLocalSchema: typeof buildLocalSchema;
+  DeepTextScanner: typeof DeepTextScanner;
+  fetchDetailText: typeof fetchDetailText;
+  itemDetailUrl: typeof itemDetailUrl;
+  stripHtml: typeof stripHtml;
   discover: typeof discover;
   discoverSchema: typeof discoverSchema;
   distill: typeof distill;
@@ -81,6 +95,7 @@ interface TestbedAPI {
   rollLedger: typeof rollLedger;
   SpendCapError: typeof SpendCapError;
   suggestPhrases: typeof suggestPhrases;
+  suggestFromItems: typeof suggestFromItems;
   memoryQueueIO: typeof memoryQueueIO;
   PersistentQueue: typeof PersistentQueue;
   QUEUE_INTERNALS: typeof QUEUE_INTERNALS;
@@ -89,14 +104,19 @@ interface TestbedAPI {
   extractDetailFields: typeof extractDetailFields;
   isDetailPage: typeof isDetailPage;
   ViewportEnqueuer: typeof ViewportEnqueuer;
+  MutationWatcher: typeof MutationWatcher;
   /** Convenience for tests: returns the count of each verdict state. */
   tallyVerdicts: (verdicts: Map<Element, ItemVerdict>) => Record<string, number>;
   /** Convenience: build a fully-formed `Filter` for the rolecast schema. */
   makeFilter: (overrides: Partial<Filter> & Pick<Filter, 'id' | 'field' | 'predicate'>) => Filter;
   /** Mounts a renderer on the page's item-set and stashes it on window for
    *  later spec calls (setRestored, setMode, re-apply). Returns the same
-   *  renderer for inline use. */
-  mountRenderer: (filters: readonly Filter[]) => {
+   *  renderer for inline use. `schemaPatch` overlays the matched stub schema
+   *  (e.g. `{ renderMode: 'detached' }` for the 6.7 specs). */
+  mountRenderer: (
+    filters: readonly Filter[],
+    schemaPatch?: Partial<Schema> | null,
+  ) => {
     renderer: Renderer;
     schema: Schema;
     summaries: ReturnType<Renderer['apply']>;
@@ -121,13 +141,17 @@ function makeFilter(
   };
 }
 
-function mountRenderer(filters: readonly Filter[]): {
+function mountRenderer(
+  filters: readonly Filter[],
+  schemaPatch?: Partial<Schema> | null,
+): {
   renderer: Renderer;
   schema: Schema;
   summaries: ReturnType<Renderer['apply']>;
 } {
-  const schema = pickStubSchema();
-  if (!schema) throw new Error('mountRenderer: no stub schema matched this document');
+  const base = pickStubSchema();
+  if (!base) throw new Error('mountRenderer: no stub schema matched this document');
+  const schema: Schema = schemaPatch ? { ...base, ...schemaPatch } : base;
   const itemSet = document.querySelector(schema.itemSetSelector);
   if (!itemSet) throw new Error(`mountRenderer: no item-set found for ${schema.itemSetSelector}`);
 
@@ -148,6 +172,12 @@ const api: TestbedAPI = {
   chromeStorageSchemaCache,
   classify,
   detect,
+  localizeItemSet,
+  buildLocalSchema,
+  DeepTextScanner,
+  fetchDetailText,
+  itemDetailUrl,
+  stripHtml,
   discover,
   discoverSchema,
   distill,
@@ -171,6 +201,7 @@ const api: TestbedAPI = {
   rollLedger,
   SpendCapError,
   suggestPhrases,
+  suggestFromItems,
   memoryQueueIO,
   PersistentQueue,
   QUEUE_INTERNALS,
@@ -179,6 +210,7 @@ const api: TestbedAPI = {
   extractDetailFields,
   isDetailPage,
   ViewportEnqueuer,
+  MutationWatcher,
   tallyVerdicts,
   makeFilter,
   mountRenderer,

@@ -17,6 +17,7 @@
 
 import type { Schema } from '../shared/types.js';
 import { discoverSchema as llmDiscoverSchema, type Provider } from './llm.js';
+import type { SpendChecker } from './spend.js';
 
 export interface SchemaCache {
   get(fingerprint: string): Promise<Schema | null>;
@@ -87,6 +88,11 @@ export interface GetOrDiscoverDeps {
   fetcher?: typeof fetch;
   /** Injected into the LLM call's `now`. Default uses Date.now. */
   now?: () => number;
+  /** Spend-cap enforcement, forwarded to the LLM call. Checked BEFORE the
+   *  provider fetch (a blocked call costs zero network) and recorded only
+   *  after a validated schema — and never on a cache hit, since hits cost
+   *  nothing. */
+  spend?: SpendChecker;
 }
 
 /** Cache-aware discovery. Cache **hit** → return the cached Schema
@@ -115,6 +121,7 @@ export async function getOrDiscover(
   if (req.hint !== undefined) llmOpts.hint = req.hint;
   if (deps.fetcher !== undefined) llmOpts.fetcher = deps.fetcher;
   if (deps.now !== undefined) llmOpts.now = deps.now;
+  if (deps.spend !== undefined) llmOpts.spend = deps.spend;
 
   const schema = await llm(req.distilled, llmOpts);
   await deps.cache.set(req.fingerprint, schema);

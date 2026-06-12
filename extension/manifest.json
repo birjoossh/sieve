@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Sieve",
-  "version": "0.0.1",
+  "name": "Negative Filter",
+  "version": "0.1.0",
   "description": "Hide items that fail your filters from any list / carousel / grid.",
   "permissions": ["sidePanel", "tabs", "scripting", "alarms", "storage"],
   "optional_host_permissions": ["<all_urls>"],
@@ -12,7 +12,19 @@
   "side_panel": {
     "default_path": "panel.html"
   },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_title": "Sieve"
+    "default_title": "Negative Filter",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   }
 }

@@ -110,7 +110,7 @@ test.describe('5.5 — throttler', () => {
       const nonZero = sleeps.filter((n) => n > 0);
       expect(nonZero.length).toBeGreaterThanOrEqual(3);
       // The sequence is increasing — escalation rather than fixed.
-      const ratio = nonZero[nonZero.length - 1] / nonZero[0];
+      const ratio = nonZero[nonZero.length - 1]! / nonZero[0]!;
       expect(ratio).toBeGreaterThanOrEqual(3); // 2000/500 = 4
     } finally {
       await browser.close();

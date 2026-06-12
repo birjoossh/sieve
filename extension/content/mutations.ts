@@ -48,10 +48,11 @@ export class MutationWatcher {
     this.observer = new MutationObserver((mutations) => {
       this.queue(mutations);
     });
-    // childList on the itemSet is enough — items are direct children.
-    // We deliberately don't observe `subtree` because nested mutations
-    // inside an existing item don't change item identity.
-    this.observer.observe(this.opts.itemSet, { childList: true });
+    // subtree is required: virtualized lists (LinkedIn's v2 LazyColumn
+    // pagination) replace a nested wrapper whose CHILDREN are the cards —
+    // with childList-only on the itemSet, those cards never surface and
+    // filters silently stop applying on page 2 (user-reported live).
+    this.observer.observe(this.opts.itemSet, { childList: true, subtree: true });
   }
 
   stop(): void {
@@ -66,16 +67,31 @@ export class MutationWatcher {
       for (const node of m.addedNodes) {
         if (!(node instanceof Element)) continue;
         // Exact item shape only: matches() against the schema's
-        // itemSelector. Wrapper elements (`.filt`, `.sliver`,
-        // `.layout-grid`) injected by the renderer don't match the
-        // original schema selector, so they're skipped here.
-        if (this.matchesItem(node)) this.pending.add(node);
+        // itemSelector — but NEVER renderer-owned nodes. For a classed
+        // selector they self-skip, but a tag-only scoped selector
+        // (`div.list > div`, github.com search) matches the renderer's
+        // own `.filt` wrapper: ingesting it loops forever (wrap →
+        // observe wrapper → treat as item → filter → wrap the wrapper).
+        if (this.isRendererNode(node)) continue;
+        if (this.matchesItem(node)) {
+          this.pending.add(node);
+        } else if (node.childElementCount > 0) {
+          // The added node may be a WRAPPER carrying items (LazyColumn
+          // pagination swaps a whole page wrapper in one mutation).
+          for (const nested of this.queryItems(node)) {
+            if (!this.isRendererNode(nested)) this.pending.add(nested);
+          }
+        }
       }
     }
     if (this.pending.size === 0) return;
     if (this.flushScheduled) return;
     this.flushScheduled = true;
     queueMicrotask(() => this.flush());
+  }
+
+  private isRendererNode(el: Element): boolean {
+    return el.matches('.filt, .sliver, .sliver-v, .ctile, .rehide, .nf-check-mark');
   }
 
   private matchesItem(el: Element): boolean {
@@ -85,6 +101,14 @@ export class MutationWatcher {
       // Defensive: an itemSelector with `:has()` on a really old
       // engine can throw — drop rather than crash the observer.
       return false;
+    }
+  }
+
+  private queryItems(root: Element): Element[] {
+    try {
+      return Array.from(root.querySelectorAll(this.opts.itemSelector));
+    } catch {
+      return [];
     }
   }
 

@@ -18,7 +18,7 @@
 // what content already knows.
 
 import { renderEnableButton } from './components/settings.js';
-import { renderFilterList } from './components/filter-list.js';
+import { renderFilterList, type PhrasePolarity } from './components/filter-list.js';
 import { renderHiddenList } from './components/hidden-list.js';
 import { renderLlmSettings } from './components/llm-settings.js';
 import {
@@ -39,7 +39,6 @@ import {
 } from '../shared/saved-filters.js';
 import { parseExport, serializeExport } from '../shared/filter-io.js';
 import { getSpendStatus, type SpendStatus } from '../background/spend.js';
-import { suggestPhrases } from '../background/llm.js';
 import {
   dismissDeepWarning,
   isDeepWarningDismissed,
@@ -47,6 +46,7 @@ import {
 import { renderDeepToggle } from './components/deep-toggle.js';
 import { renderErrorPanel, type PanelError } from './components/error-panel.js';
 import {
+  ALL_TEXT_FIELD,
   isContentToPanel,
   MESSAGE_VERSION,
   originMatchPattern,
@@ -80,6 +80,9 @@ interface PanelState {
   enabled: boolean;
   schema: Schema | null;
   phrases: string[];
+  /** Phrase-filter polarity. `off` is session-only: chips stay in the
+   *  panel but no phrase filter is pushed to content. */
+  polarity: PhrasePolarity;
   numeric: NumericFilterValue;
   mode: DisplayMode;
   items: ItemSummary[];
@@ -91,7 +94,9 @@ interface PanelState {
   /** 4.7 spend cap surface — snapshot of the LLM-call ledger. Null
    *  until the first refresh() resolves it. */
   spend: SpendStatus | null;
-  /** 4.8 phrase suggestions — in-flight + last response + last error. */
+  /** Phrase suggestions (4.8, made local in 4.15) — in-flight + last
+   *  response + last error. Sourced from the content script's detected
+   *  items, never the network. */
   suggesting: boolean;
   suggestions: string[];
   suggestError: string | null;
@@ -109,6 +114,7 @@ const state: PanelState = {
   enabled: false,
   schema: null,
   phrases: [],
+  polarity: 'exclude',
   numeric: { ...NUMERIC_DEFAULT },
   mode: 'collapse',
   items: [],
@@ -153,16 +159,19 @@ async function isOriginEnabled(origin: string): Promise<boolean> {
 function buildFilters(
   schema: Schema | null,
   phrases: string[],
+  polarity: PhrasePolarity,
   numeric: NumericFilterValue,
 ): Filter[] {
   if (!schema) return [];
   const out: Filter[] = [];
-  if (phrases.length > 0) {
+  // `off` omits the phrase filter entirely — the chips stay panel-side so
+  // the user's curated list survives the pause.
+  if (phrases.length > 0 && polarity !== 'off') {
     out.push({
       id: SLICE1_FILTER_ID,
       fingerprint: schema.fingerprint,
-      polarity: 'exclude',
-      field: 'snippet',
+      polarity,
+      field: ALL_TEXT_FIELD,
       predicate: { op: 'containsAny', phrases },
       deep: false,
       saved: false,
@@ -189,7 +198,7 @@ function buildFilters(
 
 async function pushFilters(): Promise<void> {
   if (state.activeTabId === null) return;
-  const filters = buildFilters(state.schema, state.phrases, state.numeric);
+  const filters = buildFilters(state.schema, state.phrases, state.polarity, state.numeric);
   try {
     await sendToContent(state.activeTabId, {
       t: 'setFilters',
@@ -211,6 +220,12 @@ async function pushPhrases(phrases: string[]): Promise<void> {
 
 async function pushNumeric(next: NumericFilterValue): Promise<void> {
   state.numeric = next;
+  await pushFilters();
+  render();
+}
+
+async function pushPolarity(next: PhrasePolarity): Promise<void> {
+  state.polarity = next;
   await pushFilters();
   render();
 }
@@ -267,6 +282,25 @@ async function handleEnable(origin: string): Promise<void> {
     console.error('[sieve] enableDomain failed:', reply.message);
     return;
   }
+  // registerContentScripts only injects on NEXT page load, so without this
+  // the user has to reload the tab before anything happens — and worse, after
+  // a `chrome://extensions` reload (which silently drops dynamic registrations
+  // but preserves the host permission), re-toggling Enable wouldn't recover
+  // the active tab either. executeScript against the active tab covers both
+  // cases. Failures are non-fatal: the page may be chrome:// or a privileged
+  // origin that scripting can't touch — the user can still see filtering on
+  // the next normal navigation.
+  try {
+    const tab = await activeContentTab();
+    if (tab?.id !== undefined && tab.url && new URL(tab.url).origin === origin) {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
+        files: ['content.js'],
+      });
+    }
+  } catch (err) {
+    console.warn('[negative-filter] active-tab inject skipped:', err);
+  }
   void refresh();
 }
 
@@ -285,6 +319,15 @@ async function handleDisable(origin: string): Promise<void> {
 // --- Top-level reconcile + render -----------------------------------------
 
 async function refresh(): Promise<void> {
+  // Capture session-side filter state before we read content's view of the
+  // world. If content re-initialized (full page navigation on the active
+  // tab) it'll report an empty filter list — without this snapshot the
+  // assignments below would clobber the panel's chips and the user's
+  // unsaved phrases would silently vanish.
+  const prevOrigin = state.origin;
+  const prevPhrases = state.phrases;
+  const prevNumeric = state.numeric;
+
   const tab = await activeContentTab();
   state.activeTabId = tab?.id ?? null;
   state.origin = originOf(tab);
@@ -305,10 +348,17 @@ async function refresh(): Promise<void> {
         const phraseFilter = reply.state.filters.find(
           (f) => f.id === SLICE1_FILTER_ID && f.predicate.op === 'containsAny',
         );
-        state.phrases =
-          phraseFilter && phraseFilter.predicate.op === 'containsAny'
-            ? [...phraseFilter.predicate.phrases]
-            : [];
+        if (phraseFilter && phraseFilter.predicate.op === 'containsAny') {
+          state.phrases = [...phraseFilter.predicate.phrases];
+          state.polarity = phraseFilter.polarity === 'keep' ? 'keep' : 'exclude';
+        } else if (!(state.polarity === 'off' && prevOrigin === state.origin)) {
+          // No phrase filter content-side. When the panel is in `off`,
+          // that's deliberate — keep the chips (session state) instead of
+          // mirroring the empty list. Otherwise clear as before. Polarity
+          // itself is never reset here: a pre-phrases "Show only matches"
+          // choice must survive the refresh storm from tab events.
+          state.phrases = [];
+        }
         // Reconcile numeric filter from content's filter list. Falls
         // back to the panel default when content has no numeric filter
         // yet (a freshly enabled tab).
@@ -325,6 +375,26 @@ async function refresh(): Promise<void> {
           };
         } else {
           state.numeric = { ...NUMERIC_DEFAULT };
+        }
+
+        // Session-state preservation across content re-init. When the
+        // active tab navigated (LinkedIn "new search" hits a fresh
+        // /jobs/search-results/?keywords=…), the content script re-
+        // injects with an empty filter set. We had the user's typed
+        // phrases in the panel — re-push them so filtering persists
+        // without forcing the user to retype. Scoped to same origin so
+        // a real tab switch still discards stale state. The content
+        // monkey-patched SPA watcher can't intercept page-realm
+        // pushState (isolated worlds), so this panel-side reconcile is
+        // the only path that's reliably reachable on real SPAs.
+        const sameOrigin = prevOrigin !== null && prevOrigin === state.origin;
+        const contentLostFilters =
+          state.phrases.length === 0 && prevPhrases.length > 0;
+        const contentLostNumeric = !state.numeric.enabled && prevNumeric.enabled;
+        if (state.schema && sameOrigin && (contentLostFilters || contentLostNumeric)) {
+          if (contentLostFilters) state.phrases = prevPhrases;
+          if (contentLostNumeric) state.numeric = prevNumeric;
+          void pushFilters();
         }
       } else if (reply.t === 'err') {
         state.schema = null;
@@ -379,8 +449,11 @@ async function refresh(): Promise<void> {
 
 async function handleSuggest(): Promise<void> {
   if (state.suggesting) return;
-  if (!state.llmSettings || state.llmSettings.apiKey.trim() === '') {
-    state.suggestError = 'Add a provider key in LLM settings to fetch suggestions.';
+  // Suggestions are extracted locally from the detected items by the content
+  // script (content/suggest.ts) — no LLM, no key, no network. The only
+  // precondition is a detected list on the active tab.
+  if (state.activeTabId === null || state.schema === null) {
+    state.suggestError = 'Suggestions need a detected list on this page.';
     render();
     return;
   }
@@ -388,25 +461,30 @@ async function handleSuggest(): Promise<void> {
   state.suggestError = null;
   render();
   try {
-    // Test seam: spec injects window.__nfFetcher so the suggestion
-    // call doesn't reach the real provider. In production the
-    // injection is absent and globalThis.fetch is used.
-    const fetcher = (globalThis as unknown as { __nfFetcher?: typeof fetch }).__nfFetcher;
-    const next = await suggestPhrases({
-      provider: state.llmSettings.provider,
-      apiKey: state.llmSettings.apiKey,
-      existing: state.phrases,
-      intent: 'phrases to add to a negative filter on this page',
-      ...(state.llmSettings.model !== undefined ? { model: state.llmSettings.model } : {}),
-      ...(fetcher ? { fetcher } : {}),
+    const reply = await sendToContent(state.activeTabId, {
+      t: 'getSuggestions',
+      v: MESSAGE_VERSION,
     });
-    state.suggestions = next;
+    if (reply.t === 'suggestions') {
+      state.suggestions = reply.phrases;
+    } else if (reply.t === 'err') {
+      state.suggestError = 'Suggestions need a detected list on this page.';
+    }
   } catch (err) {
     state.suggestError = err instanceof Error ? err.message : String(err);
   } finally {
     state.suggesting = false;
     render();
   }
+}
+
+/** Turn a bare "Failed to fetch" into an actionable hint that names the
+ *  host permission the user almost certainly needs to grant. Leaves other
+ *  errors untouched. */
+function decorateFetchError(message: string, pattern: string | null): string {
+  if (!/failed to fetch/i.test(message)) return message;
+  if (pattern === null) return message;
+  return `${message} — likely missing host permission for ${pattern}. Click Save in LLM settings and accept the prompt.`;
 }
 
 function handleAcceptSuggestion(phrase: string): void {
@@ -448,7 +526,7 @@ async function handleDismissDeepWarning(): Promise<void> {
 
 async function handleSaveFilters(): Promise<void> {
   if (!state.schema) return;
-  const filters = buildFilters(state.schema, state.phrases, state.numeric);
+  const filters = buildFilters(state.schema, state.phrases, state.polarity, state.numeric);
   await saveFilters(state.schema.fingerprint, filters);
   state.savedExists = true;
   render();
@@ -502,9 +580,53 @@ async function handleClearSavedFilters(): Promise<void> {
   render();
 }
 
+/** Default provider endpoints, mirrored from background/llm.ts. Used to
+ *  derive the host we must hold permission for when no custom base URL is
+ *  set. Keep in sync with DEFAULT base there. */
+const PROVIDER_DEFAULT_BASE: Record<LlmSettings['provider'], string> = {
+  anthropic: 'https://api.anthropic.com',
+  openai: 'https://api.openai.com',
+};
+
+/** `https://host/*` match pattern for the endpoint these settings will call,
+ *  or null if the URL can't be parsed. The service worker's outbound fetch
+ *  is blocked by MV3 unless this origin is in granted host_permissions —
+ *  the "Failed to fetch" symptom when only the page origin was granted. */
+function endpointOriginPattern(s: LlmSettings): string | null {
+  const raw = s.baseUrl && s.baseUrl.trim() !== '' ? s.baseUrl : PROVIDER_DEFAULT_BASE[s.provider];
+  try {
+    return `${new URL(raw).origin}/*`;
+  } catch {
+    return null;
+  }
+}
+
 async function handleSaveLlmSettings(next: LlmSettings): Promise<void> {
+  // Request host permission for the provider endpoint FIRST, while the Save
+  // click's user gesture is still active (chrome.permissions.request requires
+  // one). Without this grant the SW fetch to e.g. openrouter.ai fails with
+  // "Failed to fetch". If the user declines we still save the key but surface
+  // a clear warning so the next failed call doesn't read as a generic network
+  // error.
+  const pattern = endpointOriginPattern(next);
+  let permissionGranted: boolean | null = null;
+  if (pattern !== null) {
+    try {
+      permissionGranted = await chrome.permissions.request({ origins: [pattern] });
+    } catch (err) {
+      console.error('[negative-filter] LLM host permission request failed:', err);
+    }
+  }
   await saveLlmSettings(next);
   state.llmSettings = next;
+  if (permissionGranted === false && pattern !== null) {
+    state.discoverError =
+      `Permission for ${pattern} was not granted — LLM calls will fail with "Failed to fetch". ` +
+      `Click Save again and accept the Chrome permission prompt.`;
+  } else {
+    state.discoverError = null;
+    state.suggestError = null;
+  }
   render();
 }
 
@@ -514,7 +636,25 @@ async function handleClearLlmSettings(): Promise<void> {
   render();
 }
 
+/** "comp" → "Comp", "salary_range" → "Salary Range". Schema field names are
+ *  machine ids; the UI always shows the humanized form. */
+function humanizeFieldName(field: string): string {
+  return field
+    .split(/[_\-\s]+/)
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 function render(): void {
+  // Pre-enable, the panel is a single first-run card — the per-page
+  // sections only appear once filtering is active on the tab's origin.
+  const active = state.origin !== null && state.enabled;
+  for (const id of ['page-status', 'filter-list', 'numeric-filter', 'deep-toggle', 'hidden-list']) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !active;
+  }
+
   const settingsHost = document.getElementById('settings');
   if (settingsHost) {
     renderEnableButton(settingsHost, {
@@ -568,6 +708,8 @@ function render(): void {
     renderFilterList(filterHost, {
       enabled: state.enabled && state.schema !== null,
       phrases: state.phrases,
+      polarity: state.polarity,
+      onPolarityChange: (p) => void pushPolarity(p),
       onChange: (p) => void pushPhrases(p),
       onSave: () => void handleSaveFilters(),
       onClearSaved: () => void handleClearSavedFilters(),
@@ -619,7 +761,8 @@ function render(): void {
         state.schema !== null &&
         state.schema.fields[NUMERIC_FIELD] !== undefined,
       current: state.numeric,
-      unit: 'k$',
+      label: humanizeFieldName(NUMERIC_FIELD),
+      format: (n) => `$${n}k`,
       min: 0,
       max: 300,
       step: 10,
@@ -664,10 +807,12 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, _sendResponse) => {
       state.discoverError = null;
       void refresh();
       break;
-    case 'discoverError':
-      state.discoverError = raw.message;
+    case 'discoverError': {
+      const pattern = state.llmSettings ? endpointOriginPattern(state.llmSettings) : null;
+      state.discoverError = decorateFetchError(raw.message, pattern);
       render();
       break;
+    }
   }
   return false;
 });

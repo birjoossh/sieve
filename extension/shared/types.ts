@@ -58,10 +58,26 @@ export interface Schema {
   /** Anchor → detail-page URL, Slice 5. */
   detailLinkSelector?: string;
   detailFieldSelectors?: Record<string, string>;
-  /** `stub` = the hand-written Slice-1 fallback baked into the content script. */
-  source: 'llm' | 'taught' | 'cached' | 'stub';
+  /** How the renderer materializes a filtered item. `wrap` reparents the item
+   *  into a `.filt` wrapper; `detached` mutates only class/data attributes on
+   *  the item itself — required on React-managed lists, whose reconciler
+   *  reverts reparented rows (LinkedIn v2 LazyColumn, memory.md 2026-06-06).
+   *  Defaults to `wrap`. */
+  renderMode?: 'wrap' | 'detached';
+  /** `stub` = the hand-written Slice-1 fallback baked into the content script.
+   *  `local` = built from detect()+generalize() with no LLM, so keyword
+   *  filtering works offline / when the LLM under-matches or is unavailable. */
+  source: 'llm' | 'taught' | 'cached' | 'stub' | 'local';
   discoveredAt: number;
 }
+
+/** Sentinel `Filter.field` value meaning "match against the item's entire
+ *  visible text", not a single named schema field. Used by the panel's
+ *  free-text phrase filter so a keyword hides any card that mentions it —
+ *  robust even when the LLM-discovered schema has no matching field (e.g.
+ *  LinkedIn job cards have title/company/location but no "snippet"). The
+ *  engine's readField() special-cases this to the item's textContent. */
+export const ALL_TEXT_FIELD = '*';
 
 export interface Filter {
   id: string;
@@ -128,13 +144,21 @@ export type PanelToContent =
   | { t: 'setFilters'; v: MessageV; filters: Filter[] }
   | { t: 'setDisplayMode'; v: MessageV; mode: DisplayMode }
   | { t: 'setItemRestored'; v: MessageV; itemId: string; restored: boolean }
-  | { t: 'rediscover'; v: MessageV; hint?: string; force?: boolean };
+  | { t: 'rediscover'; v: MessageV; hint?: string; force?: boolean }
+  /** Local phrase suggestions extracted from the detected items — no LLM,
+   *  no network, so nothing here touches the PRIVACY.md surface. */
+  | { t: 'getSuggestions'; v: MessageV }
+  /** SW-relayed SPA route change (tabs.onUpdated fires on pushState; the
+   *  content script's own history patch can't cross the isolated-world
+   *  boundary — memory.md 2026-06-06). */
+  | { t: 'spaNavigated'; v: MessageV; url: string };
 
 /** Content's reply to a PanelToContent request. */
 export type ContentReply =
   | { t: 'state'; v: MessageV; state: ContentState }
   | { t: 'ack'; v: MessageV }
-  | { t: 'err'; v: MessageV; message: string };
+  | { t: 'err'; v: MessageV; message: string }
+  | { t: 'suggestions'; v: MessageV; phrases: string[] };
 
 /** Snapshot of the content script's view of the page. */
 export interface ContentState {
@@ -224,7 +248,10 @@ export function isPanelToContent(x: unknown): x is PanelToContent {
     case 'setItemRestored':
       return hasStringField(x, 'itemId') && typeof r['restored'] === 'boolean';
     case 'rediscover':
+    case 'getSuggestions':
       return true;
+    case 'spaNavigated':
+      return hasStringField(x, 'url');
     default:
       return false;
   }
@@ -241,6 +268,8 @@ export function isContentReply(x: unknown): x is ContentReply {
       return hasStringField(x, 'message');
     case 'state':
       return typeof r['state'] === 'object' && r['state'] !== null;
+    case 'suggestions':
+      return Array.isArray(r['phrases']);
     default:
       return false;
   }

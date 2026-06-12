@@ -71,6 +71,70 @@ async function evaluateWith(
   }
 }
 
+/** Like evaluateWith, but against an inline list built from `texts` — one
+ *  card per string — so predicates can be probed on exact real-world values
+ *  (thousands separators, split words) the fixture doesn't carry. */
+async function evaluateOnTexts(
+  texts: string[],
+  filter: Record<string, unknown>,
+): Promise<VerdictTally> {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto('about:blank');
+    await page.addScriptTag({ path: TESTBED });
+    return await page.evaluate(({ texts, f }) => {
+      const list = document.createElement('ul');
+      list.className = 'cards';
+      for (const t of texts) {
+        const li = document.createElement('li');
+        li.className = 'card';
+        const span = document.createElement('span');
+        span.className = 'value';
+        span.textContent = t;
+        li.appendChild(span);
+        list.appendChild(li);
+      }
+      document.body.appendChild(list);
+      const nf = (window as unknown as { __nf: typeof window['__nf'] }).__nf;
+      const schema = {
+        fingerprint: 'fixture:inline:v1',
+        layout: 'list' as const,
+        itemSetSelector: '.cards',
+        itemSelector: '.cards > .card',
+        fields: { value: { kind: 'text' as const, selector: '.value' } },
+        source: 'stub' as const,
+        discoveredAt: 0,
+      };
+      const items = nf.findItems(schema);
+      const verdicts = nf.evaluate(schema, items, [f as never]);
+      const tally: VerdictTally = { passing: 0, filtered: 0, reasons: [] };
+      for (const v of verdicts.values()) {
+        if (v.state === 'passing') tally.passing += 1;
+        if (v.state === 'filtered') {
+          tally.filtered += 1;
+          if (v.reason) tally.reasons.push(v.reason);
+        }
+      }
+      return tally;
+    }, { texts, f: filter });
+  } finally {
+    await browser.close();
+  }
+}
+
+function inlineFilter(predicate: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: 'f',
+    fingerprint: 'fixture:inline:v1',
+    polarity: 'exclude',
+    field: 'value',
+    predicate,
+    deep: false,
+    saved: false,
+  };
+}
+
 test.describe('4.1 — predicate kinds + safe-regex', () => {
   test('regex: case-insensitive /Mandarin/ on snippet → 3 filtered (cards 1, 3, 5)', async () => {
     const t = await evaluateWith({
@@ -157,6 +221,87 @@ test.describe('4.1 — predicate kinds + safe-regex', () => {
     });
     expect(t.filtered).toBe(1);
     expect(t.reasons[0]).toBe('unpaid');
+  });
+
+  test('thousands separators: "HK$2,000" parses to 2000 for greaterThan/lessThan', async () => {
+    // Carousell regression: the bare number pattern stopped at the comma
+    // and read 2, so "Price > 1500" never fired and "Price < 3" always did.
+    const gt = await evaluateOnTexts(
+      ['HK$2,000', 'HK$900'],
+      inlineFilter({ op: 'greaterThan', value: 1500 }),
+    );
+    expect(gt.filtered).toBe(1);
+    expect(gt.passing).toBe(1);
+    expect(gt.reasons[0]).toBe('2000 > 1500');
+
+    const lt = await evaluateOnTexts(
+      ['HK$2,000', 'HK$2,600'],
+      inlineFilter({ op: 'lessThan', value: 2500 }),
+    );
+    expect(lt.filtered).toBe(1);
+    expect(lt.passing).toBe(1);
+    expect(lt.reasons[0]).toBe('2000 < 2500');
+  });
+
+  test('thousands separators: comma groups + decimals parse to the full value', async () => {
+    const t = await evaluateOnTexts(
+      ['1,234.56', '1,234,567.89'],
+      inlineFilter({ op: 'greaterThan', value: 1234 }),
+    );
+    expect(t.filtered).toBe(2);
+    expect(new Set(t.reasons)).toEqual(
+      new Set(['1234.56 > 1234', '1234567.89 > 1234']),
+    );
+  });
+
+  test('regression: "$180k–$220k" still parses to 180 (k-suffix not scaled — 4.4 slider semantics)', async () => {
+    const t = await evaluateOnTexts(
+      ['$180k–$220k'],
+      inlineFilter({ op: 'lessThan', value: 200 }),
+    );
+    expect(t.filtered).toBe(1);
+    expect(t.reasons[0]).toBe('180 < 200');
+  });
+
+  test('containsAny squash: phrase "Macbook" hides an item titled "Mac Book"', async () => {
+    const t = await evaluateOnTexts(
+      ['Mac Book Pro 2021 — great condition', 'Dell XPS 13'],
+      inlineFilter({ op: 'containsAny', phrases: ['Macbook'] }),
+    );
+    expect(t.filtered).toBe(1);
+    expect(t.passing).toBe(1);
+    // The reported trigger stays the user's phrase, not the squashed text.
+    expect(t.reasons[0]).toBe('Macbook');
+  });
+
+  test('containsAny squash: multi-word phrase "mac book" hides "MacBook"', async () => {
+    const t = await evaluateOnTexts(
+      ['MacBook Air M2', 'ThinkPad X1'],
+      inlineFilter({ op: 'containsAny', phrases: ['mac book'] }),
+    );
+    expect(t.filtered).toBe(1);
+    expect(t.passing).toBe(1);
+    expect(t.reasons[0]).toBe('mac book');
+  });
+
+  test('containsAny squash: no NEW cross-word false positives; "so up"→"soup" is accepted collateral', async () => {
+    // "rust" already matches "frustrating" via plain substring — the squash
+    // path must not widen that class of hit. Squashing only merges words,
+    // so the one behavior it adds is a spaced phrase matching its joined
+    // form: documented and accepted.
+    const plain = await evaluateOnTexts(
+      ['a frustrating experience', 'rust belt tour'],
+      inlineFilter({ op: 'containsAny', phrases: ['rust'] }),
+    );
+    expect(plain.filtered).toBe(2); // both hit via plain substring, pre-existing behavior
+
+    const collateral = await evaluateOnTexts(
+      ['tomato soup recipe', 'sandwich platter'],
+      inlineFilter({ op: 'containsAny', phrases: ['so up'] }),
+    );
+    expect(collateral.filtered).toBe(1); // "soup" merges to match "so up" — accepted
+    expect(collateral.passing).toBe(1);
+    expect(collateral.reasons[0]).toBe('so up');
   });
 
   test('safe-regex: pathological pattern (a+)+ rejected with UnsafeRegexError', async () => {

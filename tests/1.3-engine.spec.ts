@@ -100,4 +100,39 @@ test.describe('1.3 — engine.evaluate', () => {
 
     await browser.close();
   });
+
+  test('whitespace-squashed phrase match: joined "mandatoryMandarin" still hits "Mandatory Mandarin" cards', async () => {
+    // Marketplace-style word-split bug ("Macbook" vs "Mac Book"): a phrase
+    // matches when haystack and phrase compare equal with all whitespace
+    // removed. On the fixture, the joined spelling must hit the same three
+    // cards the spaced phrase does, and the surfaced reason stays the
+    // user's phrase as typed.
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto(FIXTURE);
+    await page.addScriptTag({ path: TESTBED });
+
+    const result = await page.evaluate(() => {
+      const nf = (window as unknown as { __nf: typeof window['__nf'] }).__nf;
+      const schema = nf.ROLECAST_STUB_SCHEMA;
+      const items = nf.findItems(schema);
+      const verdicts = nf.evaluate(schema, items, [
+        nf.makeFilter({
+          id: 'f-joined',
+          field: 'snippet',
+          predicate: { op: 'containsAny', phrases: ['mandatoryMandarin'] },
+        }),
+      ]);
+      return items.map((el) => ({
+        id: el.getAttribute('data-id'),
+        verdict: verdicts.get(el) ?? null,
+      }));
+    });
+
+    const filtered = result.filter((p) => p.verdict?.state === 'filtered');
+    expect(filtered.map((p) => p.id)).toEqual(['r-001', 'r-003', 'r-005']);
+    for (const p of filtered) expect(p.verdict?.reason).toBe('mandatoryMandarin');
+
+    await browser.close();
+  });
 });

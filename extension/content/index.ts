@@ -11,13 +11,16 @@
 //   - Preserve the 0.5 SW round-trip log so the 0.5/0.6 gates stay
 //     green: the listener attaches before injection in those tests.
 
-import { discover } from './discover.js';
+import { buildLocalSchema, discover } from './discover.js';
 import { evaluate, findItems } from './engine.js';
 import { MutationWatcher } from './mutations.js';
 import { Renderer } from './renderer.js';
 import { pickStubSchema } from './schema-stub.js';
+import { DeepTextScanner } from './deep-text.js';
+import { suggestFromItems } from './suggest.js';
 import { loadSavedFilters } from '../shared/saved-filters.js';
 import {
+  ALL_TEXT_FIELD,
   isPanelToContent,
   MESSAGE_VERSION,
   pushToPanel,
@@ -48,9 +51,47 @@ interface PageContext {
   summaries: ItemSummary[];
   /** 4.6: watches the itemSet for added cards. null until init mounts. */
   watcher: MutationWatcher | null;
+  /** Per-item fetched description text, folded into ALL_TEXT_FIELD matching
+   *  so keyword filters hit content that isn't on the card (LinkedIn job
+   *  descriptions). Populated lazily by `scanner` when a phrase filter is
+   *  active. */
+  detailText: Map<Element, string>;
+  /** Throttled fetcher of detail text. null until mount. */
+  scanner: DeepTextScanner | null;
+  /** One pending re-scan pass for failed description fetches (rate-limit
+   *  recovery). null when none is scheduled. */
+  rescanTimer: ReturnType<typeof setTimeout> | null;
 }
 
 let ctx: PageContext | null = null;
+
+/** True when at least one active filter is a free-text phrase filter (matches
+ *  the whole-item text). Only then is fetching descriptions worthwhile. */
+function hasPhraseFilter(c: PageContext): boolean {
+  return c.filters.some(
+    (f) => f.field === ALL_TEXT_FIELD && f.predicate.op === 'containsAny' && f.predicate.phrases.length > 0,
+  );
+}
+
+/** Kick off (or resume) description fetching when a phrase filter is active.
+ *  Cached/in-flight items are skipped inside the scanner, so this is cheap to
+ *  call on every filter change. */
+function maybeScanDescriptions(c: PageContext): void {
+  if (!c.scanner) return;
+  if (!hasPhraseFilter(c)) return;
+  c.scanner.scan(c.items);
+  // Rate-limited fetches fail silently (a miss, never a false hide) and
+  // aren't cached — one delayed re-scan picks them up once the limiter
+  // cools off. scan() skips cached/in-flight URLs, so the retry only
+  // touches the failures.
+  if (c.rescanTimer !== null) return;
+  c.rescanTimer = setTimeout(() => {
+    c.rescanTimer = null;
+    if (ctx !== c || !c.scanner || !hasPhraseFilter(c)) return;
+    const missing = c.items.some((el) => el.isConnected && !c.detailText.has(el));
+    if (missing) c.scanner.scan(c.items);
+  }, 12_000);
+}
 
 async function hydrateSavedFilters(c: PageContext): Promise<void> {
   try {
@@ -58,6 +99,7 @@ async function hydrateSavedFilters(c: PageContext): Promise<void> {
     if (saved.length === 0) return;
     c.filters = saved;
     recompute(c);
+    maybeScanDescriptions(c);
     // Re-emit pageDetected so an open panel re-pulls state and
     // reconciles its local mirrors (phrases / numeric / savedExists).
     // The initial pageDetected fired with the empty filter set; the
@@ -75,7 +117,7 @@ async function hydrateSavedFilters(c: PageContext): Promise<void> {
 }
 
 function recompute(c: PageContext): void {
-  const verdicts = evaluate(c.schema, c.items, c.filters);
+  const verdicts = evaluate(c.schema, c.items, c.filters, c.detailText);
   c.summaries = c.renderer.apply(verdicts);
   pushToPanel({ t: 'itemStates', v: MESSAGE_VERSION, items: c.summaries });
 }
@@ -95,12 +137,22 @@ function handlePanelMessage(msg: PanelToContent): ContentReply {
     }
     if (msg.t === 'rediscover') {
       // Even without a schema, the user can ask us to try again — feed
-      // the hint into a fresh discover() call.
+      // the hint into a fresh discover() call. Panel-initiated rediscover
+      // bypasses the stub so the user can override a wrong-stub on a
+      // known site.
       void tryDiscover({
         ...(msg.hint !== undefined ? { hint: msg.hint } : {}),
         force: true,
+        bypassStub: true,
       });
       return { t: 'ack', v: MESSAGE_VERSION };
+    }
+    if (msg.t === 'spaNavigated') {
+      handleSpaUrlChange();
+      return { t: 'ack', v: MESSAGE_VERSION };
+    }
+    if (msg.t === 'getSuggestions') {
+      return { t: 'suggestions', v: MESSAGE_VERSION, phrases: [] };
     }
     return { t: 'err', v: MESSAGE_VERSION, message: 'no schema for this page' };
   }
@@ -118,6 +170,9 @@ function handlePanelMessage(msg: PanelToContent): ContentReply {
     case 'setFilters':
       ctx.filters = msg.filters;
       recompute(ctx);
+      // A phrase filter may need description text the card doesn't carry —
+      // fetch it in the background and re-hide as matches arrive.
+      maybeScanDescriptions(ctx);
       return { t: 'ack', v: MESSAGE_VERSION };
     case 'setDisplayMode':
       ctx.mode = msg.mode;
@@ -131,11 +186,32 @@ function handlePanelMessage(msg: PanelToContent): ContentReply {
       // Fire-and-forget — discover is async (LLM round-trip) but the
       // panel sends rediscover as a request expecting a sync ack;
       // the real outcome lands via pushToPanel(pageDetected) or
-      // pushToPanel(discoverError).
+      // pushToPanel(discoverError). Panel-initiated → bypass the stub
+      // so a wrong-stub on a known site can be overridden.
       void tryDiscover({
         ...(msg.hint !== undefined ? { hint: msg.hint } : {}),
         ...(msg.force === true ? { force: true } : {}),
+        bypassStub: true,
       });
+      return { t: 'ack', v: MESSAGE_VERSION };
+    case 'getSuggestions': {
+      // Suggestions come from the page itself — disconnected items still
+      // read textContent and would surface ghost phrases from a previous
+      // pagination page, so only live cards count.
+      const existing = ctx.filters.flatMap((f) =>
+        f.predicate.op === 'containsAny' ? f.predicate.phrases : [],
+      );
+      const phrases = suggestFromItems(
+        ctx.items.filter((el) => el.isConnected),
+        ctx.detailText,
+        existing,
+      );
+      return { t: 'suggestions', v: MESSAGE_VERSION, phrases };
+    }
+    case 'spaNavigated':
+      // Stub-first re-detect (unlike rediscover): on a known site the
+      // route change should land back on the site stub, not the LLM.
+      handleSpaUrlChange();
       return { t: 'ack', v: MESSAGE_VERSION };
   }
 }
@@ -160,10 +236,24 @@ async function roundTripPing(): Promise<void> {
 /** Mount the engine + renderer + watcher on a freshly discovered (or
  *  re-discovered) schema. Idempotent: tears down the previous ctx
  *  before installing a new one so re-discover with a different fp
- *  doesn't strand state. */
+ *  doesn't strand state. Filters + mode are carried over when the new
+ *  fingerprint matches the previous one — that's the SPA-navigation
+ *  case (same site, new search query) where the user expects their
+ *  typed-but-unsaved phrases to keep filtering. A fingerprint change
+ *  means the user is on a different layout, so filters tagged for the
+ *  old shape are dropped. */
 function mount(schema: Schema, itemSet: Element): void {
+  const carry =
+    ctx && ctx.schema.fingerprint === schema.fingerprint
+      ? { filters: ctx.filters, mode: ctx.mode }
+      : null;
   if (ctx) {
     ctx.watcher?.stop();
+    ctx.scanner?.stop();
+    if (ctx.rescanTimer !== null) clearTimeout(ctx.rescanTimer);
+    // Without this, a replaced renderer's self-heal observer keeps
+    // re-collapsing items the new renderer no longer filters.
+    ctx.renderer.disconnect();
     ctx = null;
   }
   const renderer = new Renderer({
@@ -174,16 +264,35 @@ function mount(schema: Schema, itemSet: Element): void {
       if (ctx) emitItemStates(ctx);
     },
   });
+  if (carry) renderer.setMode(carry.mode);
   ctx = {
     schema,
     itemSet,
     renderer,
-    items: findItems(schema),
-    filters: [],
-    mode: 'collapse',
+    items: findItems(schema, document, itemSet),
+    filters: carry?.filters ?? [],
+    mode: carry?.mode ?? 'collapse',
     summaries: [],
     watcher: null,
+    detailText: new Map<Element, string>(),
+    scanner: null,
+    rescanTimer: null,
   };
+  // Scanner folds fetched description text into the next recompute. Debounce
+  // recompute so a burst of arriving descriptions repaints once, not N times.
+  let repaintQueued = false;
+  ctx.scanner = new DeepTextScanner({
+    onText: (item, text) => {
+      if (!ctx) return;
+      ctx.detailText.set(item, text);
+      if (repaintQueued) return;
+      repaintQueued = true;
+      setTimeout(() => {
+        repaintQueued = false;
+        if (ctx) recompute(ctx);
+      }, 150);
+    },
+  });
   recompute(ctx);
   pushToPanel({
     t: 'pageDetected',
@@ -197,12 +306,28 @@ function mount(schema: Schema, itemSet: Element): void {
     itemSelector: schema.itemSelector,
     onItemsAdded: (added) => {
       if (!ctx) return;
-      ctx.items = [...ctx.items, ...added];
+      // Pagination on virtualized lists REPLACES cards rather than
+      // appending — prune the disconnected ones (they'd evaluate as
+      // ghosts: textContent still reads on detached nodes) and dedupe,
+      // since a re-parented wrapper can re-deliver known items.
+      const next = new Set(ctx.items.filter((el) => el.isConnected));
+      for (const el of added) next.add(el);
+      ctx.items = [...next];
       recompute(ctx);
+      maybeScanDescriptions(ctx);
     },
   });
   ctx.watcher.start();
-  void hydrateSavedFilters(ctx);
+  if (carry) {
+    // Deep-text cache was reset, so descriptions need to be re-fetched for
+    // the new set of cards before phrase filters that rely on body text
+    // (LinkedIn jobs) can match. Skip storage hydration — the carried
+    // filters are the live session state (the initial mount already
+    // hydrated, and any later panel edits already supersede the saved set).
+    maybeScanDescriptions(ctx);
+  } else {
+    void hydrateSavedFilters(ctx);
+  }
 }
 
 /** SW round-trip for the discover fetch — production wiring of the
@@ -246,18 +371,54 @@ const discoverState = {
 async function attemptDiscover(opts: {
   hint?: string;
   force?: boolean;
+  /** Only the panel's "Re-discover" button sets this — that's the
+   *  explicit "the stub is wrong, try LLM" escape hatch. SPA route
+   *  changes (new LinkedIn search) MUST leave this false so the
+   *  deterministic stub re-mounts on the new URL instead of
+   *  force-routing into a doomed LLM call. */
+  bypassStub?: boolean;
 }): Promise<boolean> {
+  if (opts.bypassStub !== true) {
+    const stub = pickStubSchema();
+    if (stub) {
+      const stubItemSet = document.querySelector(stub.itemSetSelector);
+      if (stubItemSet) {
+        mount(stub, stubItemSet);
+        return true;
+      }
+    }
+  }
+
   const discoverOpts: { hint?: string; force?: boolean } = {};
   if (opts.hint !== undefined) discoverOpts.hint = opts.hint;
   if (opts.force === true) discoverOpts.force = true;
-  const result = await discover(
-    document,
-    { fetchSchema: (r) => fetchSchemaViaSw(r) },
-    discoverOpts,
-  );
-  if (!result) return false;
-  mount(result.schema, result.itemSet);
-  return true;
+  try {
+    const result = await discover(
+      document,
+      { fetchSchema: (r) => fetchSchemaViaSw(r) },
+      discoverOpts,
+    );
+    if (!result) return false;
+    mount(result.schema, result.itemSet);
+    return true;
+  } catch (err) {
+    // The LLM round-trip failed (no key, "Failed to fetch", spend cap, or a
+    // bad response). Rather than leave the user with nothing, fall back to a
+    // local, no-LLM schema so the free-text keyword filter still works. Only
+    // named-field / numeric filters need the LLM. If even local detection
+    // finds no item-set, surface the original error.
+    const local = buildLocalSchema(document);
+    if (local) {
+      console.warn(
+        `${LOG_PREFIX} LLM discovery failed (${
+          err instanceof Error ? err.message : String(err)
+        }); using local detection.`,
+      );
+      mount(local.schema, local.itemSet);
+      return true;
+    }
+    throw err;
+  }
 }
 
 /** Attempt LLM discovery with SPA-aware retry. YouTube / LinkedIn /
@@ -271,7 +432,9 @@ async function attemptDiscover(opts: {
  *  flight. We coalesce to one run via discoverState.inFlight. force:true
  *  cancels the previous attempt's mutation watcher so the new hint
  *  takes effect. */
-async function tryDiscover(opts: { hint?: string; force?: boolean } = {}): Promise<void> {
+async function tryDiscover(
+  opts: { hint?: string; force?: boolean; bypassStub?: boolean } = {},
+): Promise<void> {
   if (opts.force === true) {
     // A forced rediscover supersedes any prior pending attempt.
     teardownDiscoverWatcher();
@@ -282,6 +445,7 @@ async function tryDiscover(opts: { hint?: string; force?: boolean } = {}): Promi
   discoverState.inFlight = true;
 
   const delays = [0, 1_000, 3_000];
+  let lastError: unknown = null;
   try {
     for (const wait of delays) {
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -291,8 +455,12 @@ async function tryDiscover(opts: { hint?: string; force?: boolean } = {}): Promi
           return;
         }
       } catch (err) {
-        emitDiscoverError(err);
-        return;
+        // A discovery error (e.g. the LLM returning a malformed schema
+        // before the SPA's real list has hydrated) must NOT abort the whole
+        // retry — on LinkedIn the site stub or local detection succeeds once
+        // the cards mount. Remember the error and keep trying; the watcher's
+        // 60s timeout surfaces it only if nothing ever works.
+        lastError = err;
       }
     }
     // Initial back-off exhausted without a detection. Watch for
@@ -301,6 +469,7 @@ async function tryDiscover(opts: { hint?: string; force?: boolean } = {}): Promi
   } finally {
     discoverState.inFlight = false;
   }
+  void lastError; // surfaced by the watcher's give-up path, not here
 }
 
 function emitDiscoverError(err: unknown): void {
@@ -316,7 +485,11 @@ function emitDiscoverError(err: unknown): void {
 const GIVE_UP_MS = 60_000;
 const MIN_MUTATION_RETRY_INTERVAL_MS = 750;
 
-function installDiscoverWatcher(opts: { hint?: string; force?: boolean }): void {
+function installDiscoverWatcher(opts: {
+  hint?: string;
+  force?: boolean;
+  bypassStub?: boolean;
+}): void {
   if (discoverState.mutationObserver) return;
   let lastAttemptAt = 0;
   let retryQueued = false;
@@ -337,9 +510,11 @@ function installDiscoverWatcher(opts: { hint?: string; force?: boolean }): void 
         discoverState.succeeded = true;
         teardownDiscoverWatcher();
       }
-    } catch (err) {
-      emitDiscoverError(err);
-      teardownDiscoverWatcher();
+    } catch {
+      // Keep watching — a transient discovery error on one mutation batch
+      // shouldn't stop us; the site stub / local detection typically
+      // succeeds on a later batch once the list finishes hydrating. The
+      // 60s give-up timer surfaces a final error if nothing ever works.
     }
   };
   const observer = new MutationObserver((records) => {
@@ -377,15 +552,90 @@ function teardownDiscoverWatcher(): void {
   }
 }
 
+/** Wire up SPA-aware URL-change re-detection. LinkedIn (and most modern
+ *  job boards) swap routes via `history.pushState`/`replaceState` without
+ *  a full reload — the original document_idle init never re-fires, so a
+ *  navigation from `/jobs/search/?…` to `/jobs/search-results/?currentJobId=…`
+ *  (or vice versa) leaves the content script bound to a stale schema.
+ *  Patch the History API + listen for popstate so any route change kicks
+ *  another discover attempt. Safe to call once per page-load. */
+let lastSpaUrl = location.href;
+let spaDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Re-detect after an SPA route change. Idempotent per URL — the SW relay
+ *  (tabs.onUpdated) and the in-realm history patch can both fire for the
+ *  same navigation. Debounced: LinkedIn pagination churns through several
+ *  URL states in ~2s (re-encoded keywords → +start → +currentJobId); each
+ *  un-debounced remount re-fetched every description and the burst tripped
+ *  the jobs-guest rate limit. One trailing remount covers the storm. */
+function handleSpaUrlChange(): void {
+  if (location.href === lastSpaUrl) return;
+  lastSpaUrl = location.href;
+  if (spaDebounceTimer !== null) clearTimeout(spaDebounceTimer);
+  spaDebounceTimer = setTimeout(() => {
+    spaDebounceTimer = null;
+    console.log(`${LOG_PREFIX} url changed → re-detect (${location.href})`);
+    // Reset the discover gate so tryDiscover() will re-run on the new URL.
+    // Existing renderer + ctx for the previous URL are torn down inside
+    // mount() the next time it fires.
+    discoverState.succeeded = false;
+    teardownDiscoverWatcher();
+    void tryDiscover({ force: true });
+  }, 1200);
+}
+
+function installSpaNavigationWatcher(): void {
+  // Best-effort only: this patch lives in the ISOLATED world, so a page-
+  // realm pushState (every real SPA) never hits it — the production
+  // trigger is the SW's tabs.onUpdated relay (`spaNavigated` message).
+  // Kept because it catches same-realm navigation in fixtures and tests.
+  for (const m of ['pushState', 'replaceState'] as const) {
+    const original = history[m];
+    history[m] = function patched(this: History, ...args: Parameters<typeof original>) {
+      const r = original.apply(this, args);
+      // Fire after the framework finishes updating the DOM.
+      setTimeout(handleSpaUrlChange, 0);
+      return r;
+    } as typeof original;
+  }
+  window.addEventListener('popstate', () => setTimeout(handleSpaUrlChange, 0));
+}
+
 function init(): void {
+  // panel.handleEnable now runs executeScript against the active tab to
+  // recover from `chrome://extensions` reloads that drop the dynamic
+  // registration. That can re-execute this bundle while a previous copy
+  // is still alive (its `chrome.runtime.onMessage` listener, history
+  // monkey-patches, ctx, etc. all linger). Guard so re-runs are no-ops.
+  const w = window as Window & { __nfContentInitialized?: boolean };
+  if (w.__nfContentInitialized) {
+    console.log(`${LOG_PREFIX} content script already initialized — skipping re-init`);
+    return;
+  }
+  w.__nfContentInitialized = true;
+
   attachMessageBridge();
+  installSpaNavigationWatcher();
 
   const schema = pickStubSchema();
   if (schema) {
     const itemSet = document.querySelector(schema.itemSetSelector);
-    if (itemSet) mount(schema, itemSet);
+    if (itemSet) {
+      mount(schema, itemSet);
+      console.log(
+        `${LOG_PREFIX} stub matched ${schema.fingerprint} (${ctx?.items.length ?? 0} items) at ${location.href}`,
+      );
+    } else {
+      // Stub selector matches a known site but the item-set hasn't hydrated
+      // yet — fall through to the SPA-aware discover retry loop so the
+      // mutation observer catches the late mount.
+      console.log(
+        `${LOG_PREFIX} stub schema picked (${schema.fingerprint}) but item-set selector not present yet; will retry`,
+      );
+      void tryDiscover();
+    }
   } else {
-    // No hand-written stub for this page → kick off LLM discovery.
+    console.log(`${LOG_PREFIX} no stub matched; running discovery on ${location.href}`);
     void tryDiscover();
   }
 

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>LinkedIn — Recommended jobs (mock, LazyColumn)</title>
+</head>
+<body>
+  <!--
+    Mock of linkedin.com/jobs/collections/recommended/?currentJobId=... — the
+    NEW LazyColumn layout that LINKEDIN_JOBS_NEW_STUB matches. Container is
+    `[componentkey="SearchResultsMainContent"]`; each card is a
+    `[role="button"][componentkey^="job-card-component-ref-"]`. The wrapping
+    inner div with the same componentkey is preserved (LinkedIn's real DOM
+    has it; the stub's itemSelector is qualified with `[role="button"]` to
+    avoid double-counting).
+
+    Card titles + body text are tuned so the integration test can drive the
+    user-reported scenario:
+      Filter "Lead"     hides 3 cards (Lead in title OR body)
+      Filter "Mandarin" additionally hides 2 cards (Mandarin in title OR body)
+  -->
+  <main>
+    <div componentkey="SearchResultsMainContent" data-testid="lazy-column" data-component-type="LazyColumn">
+
+      <!-- 1. Lead in title -->
+      <div role="button" componentkey="job-card-component-ref-1001">
+        <div componentkey="job-card-component-ref-1001">
+          <h3>Tech Lead, Backend Platform</h3>
+          <div>Acme Corp · Singapore</div>
+          <p>Drive backend platform decisions across services. Hybrid, 3 days on-site.</p>
+        </div>
+      </div>
+
+      <!-- 2. Lead in title -->
+      <div role="button" componentkey="job-card-component-ref-1002">
+        <div componentkey="job-card-component-ref-1002">
+          <h3>Engineering Lead, Mobile</h3>
+          <div>Globex · Hong Kong</div>
+          <p>Own roadmap for the mobile org. Reports to VP Engineering.</p>
+        </div>
+      </div>
+
+      <!-- 3. Lead in body, not title -->
+      <div role="button" componentkey="job-card-component-ref-1003">
+        <div componentkey="job-card-component-ref-1003">
+          <h3>Senior Software Engineer</h3>
+          <div>Hooli · Remote</div>
+          <p>Lead a team of five engineers on the search ranking pipeline.</p>
+        </div>
+      </div>
+
+      <!-- 4. Mandarin in title -->
+      <div role="button" componentkey="job-card-component-ref-1004">
+        <div componentkey="job-card-component-ref-1004">
+          <h3>Mandarin Translator, Senior</h3>
+          <div>Initech · Taipei</div>
+          <p>Localize product copy for APAC markets. Native-level required.</p>
+        </div>
+      </div>
+
+      <!-- 5. Mandarin in body, not title -->
+      <div role="button" componentkey="job-card-component-ref-1005">
+        <div componentkey="job-card-component-ref-1005">
+          <h3>Backend Engineer, APAC</h3>
+          <div>Initrode · Hong Kong</div>
+          <p>Mandarin fluency required for daily standups with the HQ team.</p>
+        </div>
+      </div>
+
+      <!-- 6. Neutral -->
+      <div role="button" componentkey="job-card-component-ref-1006">
+        <div componentkey="job-card-component-ref-1006">
+          <h3>Junior Frontend Developer</h3>
+          <div>Soylent · Manila</div>
+          <p>Implement marketing pages with our component library.</p>
+        </div>
+      </div>
+
+      <!-- 7. Neutral -->
+      <div role="button" componentkey="job-card-component-ref-1007">
+        <div componentkey="job-card-component-ref-1007">
+          <h3>Data Scientist, Growth</h3>
+          <div>Pied Piper · Jakarta</div>
+          <p>Causal inference on funnel metrics. Partner with product weekly.</p>
+        </div>
+      </div>
+
+      <!-- 8. Neutral -->
+      <div role="button" componentkey="job-card-component-ref-1008">
+        <div componentkey="job-card-component-ref-1008">
+          <h3>Cloud Solutions Architect</h3>
+          <div>Vandelay · Sydney</div>
+          <p>Design landing zones for enterprise customers across AWS / GCP.</p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</body>
+</html>

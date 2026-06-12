@@ -40,48 +40,18 @@
 //     downstream is async-friendly,
 //   - widen the strategy comparison once we have ≥2 real-site captures.
 
+import { stableShape } from './stable-classes.js';
+
 const DEPTH = 3;
 
-/** 6.2: utility-class noise filter. CSS-in-JS (Linaria/styled-components/
- *  emotion) and Tailwind JIT emit per-deploy hashes like `css-1xyz3a`,
- *  `_1f9p`, `Atoms_root__a8K2`. They look meaningful but change every
- *  deploy → cache miss + unnecessary LLM call. We drop them before the
- *  sort.
- *
- *  Heuristic patterns:
- *    - `css-<base36>`     emotion / linaria
- *    - `_<short hash>`    leading-underscore (Next.js, CSS modules)
- *    - `<word>__<hash>`   CSS modules `module_root__xyz`
- *    - `<word>_<word>__<hash>` Atoms_root__a8K2
- *    - `jsx-<digits>`     styled-jsx
- *
- *  Anything we can't classify stays — better to fingerprint a stable
- *  hand-written class than to over-filter. */
-const UTILITY_CLASS_PATTERNS: ReadonlyArray<RegExp> = [
-  /^css-[a-z0-9]{4,}$/i,
-  /^_[a-z0-9_-]{3,}$/i,
-  /^[a-z][\w-]*__[a-z0-9]{4,}$/i,
-  /^jsx-\d{4,}$/i,
-  /^sc-[a-z0-9]{4,}$/i,
-];
-
-function isUtilityClass(cls: string): boolean {
-  for (const re of UTILITY_CLASS_PATTERNS) {
-    if (re.test(cls)) return true;
-  }
-  return false;
-}
-
-/** Tag + sorted, utility-stripped class list. Mirrors detect.ts's
- *  `signatureOf` so the two modules stay in sync on what counts as "the
- *  same shape." Ids and all attributes other than class are excluded
- *  by design — see file comment. */
+/** 6.2: utility-class noise filter now lives in the shared `stable-classes`
+ *  module so detect.ts and fingerprint.ts can never drift on what counts as
+ *  a per-deploy / per-item token (CSS-in-JS hashes, CSS-module suffixes,
+ *  styled-jsx ids, Ember view ids). `nodeShape` is tag + the volatile-
+ *  stripped, sorted class list — ids and all non-class attributes are
+ *  excluded by design (see file comment). */
 function nodeShape(el: Element): string {
-  const classes = Array.from(el.classList)
-    .filter((c) => !isUtilityClass(c))
-    .sort()
-    .join('.');
-  return classes ? `${el.tagName}.${classes}` : el.tagName;
+  return stableShape(el);
 }
 
 const NON_CONTENT_TAGS = new Set([

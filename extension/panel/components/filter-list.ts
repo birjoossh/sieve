@@ -8,6 +8,11 @@
 // structured predicates. Keep the prop surface narrow so the swap stays
 // mechanical — the caller passes phrases in/out as a string[].
 
+/** How the phrase list is applied. `off` keeps the chips in the panel but
+ *  drops the filter from what's pushed to content — session-only by design,
+ *  so a user can pause filtering without losing a curated phrase list. */
+export type PhrasePolarity = 'exclude' | 'keep' | 'off';
+
 export interface FilterListState {
   /** Whether the host page actually has a list to filter. Slice-1
    *  rolecast-only — when false, the section renders a disabled
@@ -15,6 +20,11 @@ export interface FilterListState {
   enabled: boolean;
   phrases: string[];
   onChange: (phrases: string[]) => void;
+  /** Phrase-filter polarity. Defaults to `exclude` (hide matches) when
+   *  absent. The segmented control only renders when the callback is
+   *  wired. */
+  polarity?: PhrasePolarity;
+  onPolarityChange?: (polarity: PhrasePolarity) => void;
   /** 4.5: when present, the section renders Save / Clear buttons so
    *  the current filter set can be persisted to storage.sync. The
    *  panel keeps track of whether saved set exists for the active
@@ -51,15 +61,50 @@ export function renderFilterList(host: HTMLElement, state: FilterListState): voi
   if (!state.enabled) {
     const p = document.createElement('p');
     p.className = 'section-meta';
-    p.textContent = 'Enable a site with a detected list to filter.';
+    p.textContent = 'Filters become available once a list is detected on this page.';
     host.appendChild(p);
     return;
   }
 
+  const polarity: PhrasePolarity = state.polarity ?? 'exclude';
+
   const meta = document.createElement('p');
   meta.className = 'section-meta';
-  meta.textContent = 'Hide items whose snippet contains any of:';
+  meta.textContent =
+    polarity === 'keep'
+      ? 'Show only items whose text contains any of these phrases:'
+      : polarity === 'off'
+        ? 'Filtering is off — your phrases are kept but not applied.'
+        : 'Hide items whose text contains any of these phrases:';
   host.appendChild(meta);
+
+  if (state.onPolarityChange) {
+    const onPolarityChange = state.onPolarityChange;
+    const seg = document.createElement('div');
+    seg.className = 'polarity-toggle';
+    seg.dataset['role'] = 'filter-polarity';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', 'Filter polarity');
+
+    const LABELS: Record<PhrasePolarity, string> = {
+      exclude: 'Hide matches',
+      keep: 'Show only matches',
+      off: 'Off',
+    };
+    for (const p of ['exclude', 'keep', 'off'] as const) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'polarity-btn';
+      btn.dataset['polarity'] = p;
+      btn.dataset['input'] = 'polarity';
+      btn.textContent = LABELS[p];
+      btn.setAttribute('aria-pressed', String(polarity === p));
+      if (polarity === p) btn.classList.add('active');
+      btn.onclick = () => onPolarityChange(p);
+      seg.appendChild(btn);
+    }
+    host.appendChild(seg);
+  }
 
   // Chips — one per phrase. Use textContent (never innerHTML) since
   // phrases are user-supplied.
@@ -97,15 +142,16 @@ export function renderFilterList(host: HTMLElement, state: FilterListState): voi
 
   const input = document.createElement('input');
   input.type = 'text';
-  input.className = 'phrase-input';
-  input.placeholder = 'add a phrase…';
+  input.className = 'phrase-input input';
+  input.placeholder = 'Add a phrase to hide…';
   input.dataset['input'] = 'phrase';
+  input.setAttribute('aria-label', 'Phrase to hide');
   input.autocomplete = 'off';
   form.appendChild(input);
 
   const add = document.createElement('button');
   add.type = 'submit';
-  add.className = 'phrase-add';
+  add.className = 'phrase-add btn btn-secondary';
   add.textContent = 'Add';
   form.appendChild(add);
 
@@ -129,9 +175,9 @@ export function renderFilterList(host: HTMLElement, state: FilterListState): voi
 
     const suggestBtn = document.createElement('button');
     suggestBtn.type = 'button';
-    suggestBtn.className = 'suggest-btn';
+    suggestBtn.className = 'suggest-btn btn btn-ghost btn-sm';
     suggestBtn.dataset['action'] = 'suggest-phrases';
-    suggestBtn.textContent = state.suggesting ? '✦ …' : '✦ Suggest phrases';
+    suggestBtn.textContent = state.suggesting ? '✦ Suggesting…' : '✦ Suggest phrases';
     suggestBtn.disabled = !!state.suggesting;
     suggestBtn.onclick = () => state.onSuggest?.();
     suggestRow.appendChild(suggestBtn);
@@ -176,7 +222,7 @@ export function renderFilterList(host: HTMLElement, state: FilterListState): voi
       if (state.onDismissSuggestions) {
         const dismiss = document.createElement('button');
         dismiss.type = 'button';
-        dismiss.className = 'suggest-dismiss';
+        dismiss.className = 'suggest-dismiss btn btn-ghost btn-sm';
         dismiss.dataset['action'] = 'dismiss-suggestions';
         dismiss.textContent = 'Dismiss';
         dismiss.onclick = () => state.onDismissSuggestions?.();
@@ -194,34 +240,16 @@ export function renderFilterList(host: HTMLElement, state: FilterListState): voi
 
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
-    saveBtn.className = 'filter-save';
+    saveBtn.className = 'filter-save btn btn-secondary btn-sm';
     saveBtn.dataset['action'] = 'save-filters';
     saveBtn.textContent = 'Save filters';
     saveBtn.onclick = () => state.onSave?.();
     actions.appendChild(saveBtn);
 
-    if (state.onClearSaved && state.savedExists) {
-      const clearBtn = document.createElement('button');
-      clearBtn.type = 'button';
-      clearBtn.className = 'filter-clear-saved';
-      clearBtn.dataset['action'] = 'clear-saved-filters';
-      clearBtn.textContent = 'Clear saved';
-      clearBtn.onclick = () => state.onClearSaved?.();
-      actions.appendChild(clearBtn);
-    }
-
-    if (state.savedExists) {
-      const badge = document.createElement('span');
-      badge.className = 'filter-saved-badge';
-      badge.dataset['role'] = 'saved-badge';
-      badge.textContent = 'saved';
-      actions.appendChild(badge);
-    }
-
     if (state.onExport) {
       const exportBtn = document.createElement('button');
       exportBtn.type = 'button';
-      exportBtn.className = 'filter-export';
+      exportBtn.className = 'filter-export btn btn-ghost btn-sm';
       exportBtn.dataset['action'] = 'export-filters';
       exportBtn.textContent = 'Export';
       exportBtn.onclick = () => state.onExport?.();
@@ -230,13 +258,15 @@ export function renderFilterList(host: HTMLElement, state: FilterListState): voi
 
     if (state.onImport) {
       const importLabel = document.createElement('label');
-      importLabel.className = 'filter-import';
+      importLabel.className = 'filter-import btn btn-ghost btn-sm';
       importLabel.dataset['role'] = 'import-row';
-      importLabel.textContent = 'Import ';
+      importLabel.textContent = 'Import…';
       const importInput = document.createElement('input');
       importInput.type = 'file';
+      importInput.className = 'visually-hidden';
       importInput.dataset['input'] = 'import-file';
       importInput.accept = 'application/json,.json';
+      importInput.setAttribute('aria-label', 'Import filters file');
       importInput.onchange = () => {
         const file = importInput.files?.[0];
         if (file) state.onImport?.(file);
@@ -244,6 +274,24 @@ export function renderFilterList(host: HTMLElement, state: FilterListState): voi
       };
       importLabel.appendChild(importInput);
       actions.appendChild(importLabel);
+    }
+
+    if (state.onClearSaved && state.savedExists) {
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'filter-clear-saved btn btn-danger btn-sm';
+      clearBtn.dataset['action'] = 'clear-saved-filters';
+      clearBtn.textContent = 'Clear saved';
+      clearBtn.onclick = () => state.onClearSaved?.();
+      actions.appendChild(clearBtn);
+    }
+
+    if (state.savedExists) {
+      const badge = document.createElement('span');
+      badge.className = 'filter-saved-badge badge badge-accent';
+      badge.dataset['role'] = 'saved-badge';
+      badge.textContent = 'Saved';
+      actions.appendChild(badge);
     }
 
     host.appendChild(actions);

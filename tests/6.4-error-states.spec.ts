@@ -66,7 +66,8 @@ test.describe('6.4 — failure-mode rows render', () => {
     // via env.panel.evaluate to render the error directly using
     // the exported renderer.
     const visible = await env.panel.evaluate(async () => {
-      const { renderErrorPanel } = await import('./components/error-panel.js');
+      const modPath = './components/error-panel.js';
+      const { renderErrorPanel } = await import(modPath);
       const host = document.getElementById('error-panel')!;
       renderErrorPanel(host, {
         errors: [

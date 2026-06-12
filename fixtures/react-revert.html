@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>React Revert — hostile reconciled list</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        color: #111;
+        background: #fafafa;
+        margin: 0;
+        padding: 32px 24px;
+        max-width: 760px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 16px 0;
+        font-weight: 600;
+      }
+      .joblist {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .job {
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 14px 16px;
+        min-height: 90px;
+      }
+      .job .title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .job .company {
+        margin: 2px 0 8px 0;
+        font-size: 13px;
+        color: #57606a;
+      }
+      .job .location {
+        font-size: 12px;
+        color: #57606a;
+        margin: 0 0 8px 0;
+      }
+      .job .snippet {
+        margin: 0;
+        font-size: 13px;
+        color: #24292f;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Open roles (React-reconciled)</h1>
+    <div class="joblist" id="list">
+      <article class="job" data-id="j-01">
+        <h2 class="title">Senior Frontend Engineer</h2>
+        <p class="company">Lumon Industries</p>
+        <p class="location">Remote</p>
+        <p class="snippet">Ship delightful, accessible interfaces with a modern toolchain.</p>
+      </article>
+      <article class="job" data-id="j-02">
+        <h2 class="title">Smart Contract Developer</h2>
+        <p class="company">ChainForge</p>
+        <p class="location">Lisbon</p>
+        <p class="snippet">Build and audit blockchain settlement contracts for DeFi clients.</p>
+      </article>
+      <article class="job" data-id="j-03">
+        <h2 class="title">Platform Engineer</h2>
+        <p class="company">Hooli Cloud</p>
+        <p class="location">Berlin</p>
+        <p class="snippet">Run the Kubernetes fleet that powers our multi-region API.</p>
+      </article>
+      <article class="job" data-id="j-04">
+        <h2 class="title">Protocol Researcher</h2>
+        <p class="company">LedgerLabs</p>
+        <p class="location">Zug</p>
+        <p class="snippet">Design consensus mechanisms for a next-generation blockchain.</p>
+      </article>
+      <article class="job" data-id="j-05">
+        <h2 class="title">Data Engineer</h2>
+        <p class="company">Northwind Analytics</p>
+        <p class="location">Amsterdam</p>
+        <p class="snippet">Own the batch and streaming pipelines feeding the warehouse.</p>
+      </article>
+      <article class="job" data-id="j-06">
+        <h2 class="title">Mobile Engineer (iOS)</h2>
+        <p class="company">Petal Health</p>
+        <p class="location">London</p>
+        <p class="snippet">SwiftUI-first health tracking app with offline sync.</p>
+      </article>
+      <article class="job" data-id="j-07">
+        <h2 class="title">Web3 Growth Engineer</h2>
+        <p class="company">TokenWorks</p>
+        <p class="location">Remote</p>
+        <p class="snippet">Grow our blockchain wallet's activation funnel end to end.</p>
+      </article>
+      <article class="job" data-id="j-08">
+        <h2 class="title">Site Reliability Engineer</h2>
+        <p class="company">Initech Systems</p>
+        <p class="location">Austin</p>
+        <p class="snippet">Keep five nines on a fleet of bare-metal edge nodes.</p>
+      </article>
+      <article class="job" data-id="j-09">
+        <h2 class="title">Solidity Auditor</h2>
+        <p class="company">Praetorian Audits</p>
+        <p class="location">Remote</p>
+        <p class="snippet">Review blockchain contracts for reentrancy and oracle abuse.</p>
+      </article>
+      <article class="job" data-id="j-10">
+        <h2 class="title">Engineering Manager</h2>
+        <p class="company">Gusteau Eats</p>
+        <p class="location">Paris</p>
+        <p class="snippet">Lead a team of eight building the merchant ordering stack.</p>
+      </article>
+    </div>
+    <script>
+      // Emulates a React reconciler that owns #list. Three behaviors, matching
+      // what LinkedIn's v2 LazyColumn does to the wrap renderer in production:
+      //   (a) any element child of the list it didn't render gets removed;
+      //   (b) original card nodes that were reparented (e.g. into a .filt
+      //       wrapper) are rescued back to their original position/order;
+      //   (c) "re-render": a card's className (and any foreign attributes) is
+      //       periodically snapped back to the vDOM value — on a timer, and on
+      //       demand via window.__reactRender(i) for deterministic tests.
+      (() => {
+        const list = document.getElementById('list');
+        const originals = Array.from(list.children);
+        const originalClassName = originals.map((el) => el.className);
+        const known = new Set(originals);
+
+        const reconcileChildren = () => {
+          for (const child of Array.from(list.children)) {
+            if (known.has(child)) continue;
+            const rescued = originals.filter((o) => child.contains(o));
+            if (rescued.length > 0) child.replaceWith(...rescued);
+            else child.remove();
+          }
+          let prev = null;
+          for (const o of originals) {
+            if (o.parentElement !== list) list.appendChild(o);
+            if (prev && prev.nextElementSibling !== o) prev.after(o);
+            prev = o;
+          }
+        };
+        new MutationObserver(reconcileChildren).observe(list, {
+          childList: true,
+          subtree: true,
+        });
+
+        const rerender = (i) => {
+          const el = originals[i];
+          if (!el) return;
+          el.className = originalClassName[i];
+          el.removeAttribute('data-nf-reason');
+          el.removeAttribute('data-nf-id');
+        };
+        let cursor = 0;
+        window.__reactRender = rerender;
+        window.__reactRenderTick = () => {
+          rerender(cursor);
+          cursor = (cursor + 1) % originals.length;
+        };
+        setInterval(window.__reactRenderTick, 400);
+      })();
+    </script>
+  </body>
+</html>

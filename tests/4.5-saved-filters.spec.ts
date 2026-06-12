@@ -56,12 +56,28 @@ test.describe('4.5 — saved filters round-trip via storage.sync', () => {
     await expect(env.panel.locator('.chip')).toHaveCount(2);
     await expect(env.panel.locator('[data-role="saved-badge"]')).toHaveCount(1);
 
-    // Clear saved → reload → no slivers (ephemeral state in panel,
-    // but the content script has nothing to hydrate so the page is
-    // clean post-reload).
+    // Clear saved → saved badge gone, but the session chips stay in
+    // the panel — Clear Saved only purges storage.sync, not the active
+    // filter set. (Pre-4.9 the panel mis-conflated these and a reload
+    // here showed 0 slivers; the corrected UX is that session phrases
+    // survive an in-app navigation regardless of whether they're saved
+    // — matching the user-reported "filters disappear on new LinkedIn
+    // search" bug. The user removes active filters by clicking × on
+    // each chip.)
     await env.panel.click('button[data-action="clear-saved-filters"]');
     await expect(env.panel.locator('[data-role="saved-badge"]')).toHaveCount(0);
     await env.fixture.reload();
+    await env.panel.waitForFunction(
+      () => document.querySelector('.chip[data-phrase="mandatory Mandarin"]') !== null,
+      undefined,
+      { timeout: 5_000 },
+    );
+    await expect(env.panel.locator('.chip')).toHaveCount(2);
+    await expect(env.fixture.locator('.sliver')).toHaveCount(4);
+
+    // Explicit chip removal IS how the user clears active filtering.
+    await env.panel.click('.chip[data-phrase="mandatory Mandarin"] .chip-remove');
+    await env.panel.click('.chip[data-phrase="unpaid"] .chip-remove');
     await expect(env.fixture.locator('.sliver')).toHaveCount(0);
   });
 });

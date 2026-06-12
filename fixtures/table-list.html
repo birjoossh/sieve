@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- Table-based list in the news.ycombinator.com shape: items are <tr>
+     elements directly inside <tbody>. Wrapping a row in a <div> is invalid
+     table structure — this fixture locks in the renderer's forced-detached
+     handling for table parts (6.8). -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>table-list — story table fixture</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; }
+      table.stories { border-collapse: collapse; width: 720px; }
+      td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+      td.rank { color: #888; width: 32px; }
+      td.meta { color: #888; font-size: 12px; width: 180px; }
+    </style>
+  </head>
+  <body>
+    <h1>Front page</h1>
+    <table class="stories">
+      <tbody>
+        <tr class="story" data-id="s-001">
+          <td class="rank">1.</td>
+          <td class="title"><a href="#s1">Show HN: I built an AI agent that reviews pull requests</a></td>
+          <td class="meta">312 points · 198 comments</td>
+        </tr>
+        <tr class="story" data-id="s-002">
+          <td class="rank">2.</td>
+          <td class="title"><a href="#s2">PostgreSQL 18 released</a></td>
+          <td class="meta">540 points · 230 comments</td>
+        </tr>
+        <tr class="story" data-id="s-003">
+          <td class="rank">3.</td>
+          <td class="title"><a href="#s3">The case against AI coding assistants</a></td>
+          <td class="meta">120 points · 415 comments</td>
+        </tr>
+        <tr class="story" data-id="s-004">
+          <td class="rank">4.</td>
+          <td class="title"><a href="#s4">Rust 2.0 roadmap discussion</a></td>
+          <td class="meta">98 points · 77 comments</td>
+        </tr>
+        <tr class="story" data-id="s-005">
+          <td class="rank">5.</td>
+          <td class="title"><a href="#s5">A deep dive into BSD jails</a></td>
+          <td class="meta">64 points · 12 comments</td>
+        </tr>
+        <tr class="story" data-id="s-006">
+          <td class="rank">6.</td>
+          <td class="title"><a href="#s6">OpenAI rival ships new frontier model</a></td>
+          <td class="meta">301 points · 502 comments</td>
+        </tr>
+        <tr class="story" data-id="s-007">
+          <td class="rank">7.</td>
+          <td class="title"><a href="#s7">Why we moved back to bare metal</a></td>
+          <td class="meta">222 points · 145 comments</td>
+        </tr>
+        <tr class="story" data-id="s-008">
+          <td class="rank">8.</td>
+          <td class="title"><a href="#s8">SQLite as an application file format</a></td>
+          <td class="meta">187 points · 60 comments</td>
+        </tr>
+        <tr class="story" data-id="s-009">
+          <td class="rank">9.</td>
+          <td class="title"><a href="#s9">An AI-generated novel won a literary prize</a></td>
+          <td class="meta">76 points · 340 comments</td>
+        </tr>
+        <tr class="story" data-id="s-010">
+          <td class="rank">10.</td>
+          <td class="title"><a href="#s10">Reverse engineering a smart thermostat</a></td>
+          <td class="meta">143 points · 31 comments</td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>

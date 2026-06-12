@@ -244,4 +244,58 @@ test.describe('3.5 — re-discover + hint', () => {
       await browser.close();
     }
   });
+
+  test('page-status: Re-discover renders even with NO schema (enabled-but-undetected dead-end)', async () => {
+    // The missing-schema error row tells the user to "Use Re-discover
+    // (above)" — so the control must exist precisely when there is no
+    // schema. This locks in the fix for the dead-end where the rediscover
+    // block was gated behind `state.schema`.
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.goto('about:blank');
+      await page.addScriptTag({ path: TESTBED });
+      const result = await page.evaluate(async () => {
+        const nf = (window as unknown as { __nf: typeof window['__nf'] }).__nf;
+        const host = document.createElement('section');
+        document.body.appendChild(host);
+
+        interface Capture {
+          hint?: string;
+          force: true;
+        }
+        const captured: Capture[] = [];
+        nf.renderPageStatus(host, {
+          schema: null,
+          itemCount: 0,
+          mode: 'collapse',
+          onModeChange: () => undefined,
+          onRediscover: (payload) => captured.push(payload),
+        });
+
+        const input = host.querySelector<HTMLInputElement>('[data-input="rediscover-hint"]');
+        const button = host.querySelector<HTMLButtonElement>('[data-action="rediscover"]');
+        if (!input || !button) throw new Error('Re-discover UI not rendered without schema');
+
+        input.value = 'job cards in the main column';
+        button.click();
+
+        return {
+          captured,
+          statusText: host.querySelector('.section-meta')?.textContent ?? '',
+          // The display-mode toggle still needs a schema — only the
+          // rediscover block is unconditional.
+          hasModeToggle: host.querySelector('[data-role="display-mode"]') !== null,
+        };
+      });
+
+      expect(result.hasModeToggle).toBe(false);
+      expect(result.statusText).toContain('No list detected');
+      expect(result.captured).toEqual([
+        { force: true, hint: 'job cards in the main column' },
+      ]);
+    } finally {
+      await browser.close();
+    }
+  });
 });

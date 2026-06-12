@@ -55,6 +55,27 @@ test.describe('1.8 — DISPLAY mode toggle', () => {
       'aria-pressed',
       'true',
     );
+    await expect(env.panel.locator('.mode-btn[data-mode="collapse"]')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    // Restyle guard: the active side must be visually unambiguous — a
+    // filled background distinct from the inactive side, plus an inset
+    // (pressed) shadow. Computed-style check so a CSS regression that
+    // flattens the two sides fails here rather than in a user report.
+    const styleOf = (sel: string) =>
+      env.panel
+        .locator(sel)
+        .evaluate((el) => {
+          const s = getComputedStyle(el);
+          return { bg: s.backgroundColor, shadow: s.boxShadow };
+        });
+    const activeStyle = await styleOf('.mode-btn[data-mode="hide"]');
+    const inactiveStyle = await styleOf('.mode-btn[data-mode="collapse"]');
+    expect(activeStyle.bg).not.toBe(inactiveStyle.bg);
+    expect(activeStyle.shadow).not.toBe('none');
+    expect(inactiveStyle.shadow).toBe('none');
 
     // Restored items remain visible even in hide mode — restore card 1 via
     // its HIDDEN row, then assert its wrapper is still visible (the card).

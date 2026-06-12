@@ -90,3 +90,5 @@ files only under `tests/`, `fixtures/`, and Playwright config.
   3.5), grep all message payloads + storage writes for the key value. The key must
   only appear in the provider call. Any other appearance is a fail.
 - **One task per run** unless the parent explicitly says "run the full suite" (6.6).
+- **Integration Test** Every time you encounter a bug or resolve a new issue, create a new integration test under `tests/` that reproduces it, if one doesn't already exist. This ensures the issue doesn't regress in the future and serves as documentation for the bug and its fix. Run the full test suite after adding the new test to confirm it fails before the fix and passes after. 
+- **No advancing on red.** If a task fails verification, do not proceed to the next task. Instead, report the failure and hand back to the `dev` agent for fixes. Only after the current task passes verification should you move on to the next one.

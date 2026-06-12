@@ -87,7 +87,7 @@ test.describe('0.4 — enable-site button tracks active tab', () => {
         const btn = document.querySelector<HTMLButtonElement>(
           'button[data-action="enable-site"]',
         );
-        return !!btn && !btn.disabled && btn.textContent === `Enable on ${origin}`;
+        return !!btn && !btn.disabled && btn.textContent === `Enable on ${new URL(origin).hostname}`;
       },
       fixtureOrigin,
       { timeout: 5_000 },

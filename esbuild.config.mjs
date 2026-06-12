@@ -87,6 +87,7 @@ async function copyStaticAssets() {
   if (existsSync(resolve(SRC, 'panel/panel.css'))) {
     await cp(resolve(SRC, 'panel/panel.css'), resolve(OUT, 'panel.css'));
   }
+  await cp(resolve(SRC, 'icons'), resolve(OUT, 'icons'), { recursive: true });
 }
 
 async function run() {

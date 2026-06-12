@@ -7,6 +7,7 @@
 // is durable without our own bookkeeping.
 
 import {
+  isContentToPanel,
   isPanelMsg,
   MESSAGE_VERSION,
   originMatchPattern,
@@ -19,6 +20,26 @@ import { loadLlmSettings } from '../shared/settings.js';
 import { chromeStorageSpendChecker } from './spend.js';
 
 const CONTENT_SCRIPT_FILE = 'content.js';
+
+// Without this, clicking the toolbar button does nothing at all — the side
+// panel only opens via the puzzle-piece menu, which reads as a dead install.
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch(() => undefined);
+
+void chrome.action.setBadgeBackgroundColor({ color: '#4f46e5' }).catch(() => undefined);
+
+// SPA route changes (history.pushState in the page realm) never reach the
+// content script's own history patch — MV3 isolated worlds don't share the
+// History object (memory.md 2026-06-06; bit us live on LinkedIn search).
+// tabs.onUpdated DOES fire with changeInfo.url for pushState, so relay it.
+// Tabs without our content script reject the message — swallowed.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url === undefined) return;
+  void chrome.tabs
+    .sendMessage(tabId, { t: 'spaNavigated', v: MESSAGE_VERSION, url: changeInfo.url })
+    .catch(() => undefined);
+});
 
 async function registerForOrigin(origin: string): Promise<void> {
   const id = scriptIdFor(origin);
@@ -82,6 +103,10 @@ async function handle(msg: PanelMsg): Promise<SwToPanel> {
       try {
         const schema = await getOrDiscover(req, {
           cache: chromeStorageSchemaCache(),
+          // Enforced inside discoverSchema: canSpend BEFORE the provider
+          // fetch (blocked call costs zero network), recordSpend only after
+          // a validated schema. Cache hits never touch the meter.
+          spend: chromeStorageSpendChecker(),
           loadSettings: async () => {
             const s: {
               provider: typeof settings.provider;
@@ -97,13 +122,6 @@ async function handle(msg: PanelMsg): Promise<SwToPanel> {
             return s;
           },
         });
-        // Honor the spend cap on the production path. The LLM call
-        // itself doesn't yet take opts.spend at this site — we mirror
-        // the meter by hand here so a successful discoverSchema bumps
-        // the daily count visibly in the panel.
-        // (We move this inside discoverSchema once the SW path takes a
-        // spend hook directly.)
-        await chromeStorageSpendChecker().recordSpend(Date.now());
         return { t: 'schema', v: MESSAGE_VERSION, schema };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -114,6 +132,20 @@ async function handle(msg: PanelMsg): Promise<SwToPanel> {
 }
 
 chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
+  // Content's itemStates broadcast reaches the SW as well as the panel
+  // (chrome.runtime.sendMessage fans out to both). Piggy-back on it for
+  // the per-tab badge: restored items are visible again, so only
+  // still-hidden ones count.
+  if (isContentToPanel(raw) && raw.t === 'itemStates') {
+    const tabId = _sender.tab?.id;
+    if (tabId !== undefined) {
+      const hidden = raw.items.filter((i) => i.state === 'filtered').length;
+      void chrome.action
+        .setBadgeText({ tabId, text: hidden > 0 ? String(hidden) : '' })
+        .catch(() => undefined);
+    }
+    return false;
+  }
   if (!isPanelMsg(raw)) {
     // Stay silent on malformed messages — don't crash the channel for the
     // sender. A future bus migration (v:2) lives alongside v:1 here.

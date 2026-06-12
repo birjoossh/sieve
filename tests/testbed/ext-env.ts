@@ -79,27 +79,51 @@ function startFixtureServer(): Promise<{ server: Server; origin: string }> {
   });
 }
 
-export async function setupExtEnv(): Promise<ExtEnv> {
+export interface SetupExtEnvOptions {
+  /** Initial fixture path served from the test server. Defaults to
+   *  `/rolecast.html` to match existing specs. */
+  fixturePath?: string;
+  /** Optional hostname to alias to 127.0.0.1 via Chrome's
+   *  `--host-resolver-rules`. Use this when a spec needs `location.hostname`
+   *  to look like a real site so a stub's host gate fires (e.g.
+   *  `linkedin.local` makes `pickStubSchema()` match the LinkedIn rule). */
+  hostname?: string;
+}
+
+export async function setupExtEnv(opts: SetupExtEnvOptions = {}): Promise<ExtEnv> {
   const extDir = await buildTestExtension();
   const userDataDir = await mkdtemp(join(tmpdir(), 'nf-ext-'));
 
   const { server, origin } = await startFixtureServer();
+  const port = new URL(origin).port;
+
+  const args = [
+    `--disable-extensions-except=${extDir}`,
+    `--load-extension=${extDir}`,
+    '--no-sandbox',
+  ];
+  // host-resolver-rules lets us pretend the local fixture server is hosted
+  // at a real-looking domain; the stub host-includes check (`linkedin.`)
+  // depends on `location.hostname` and we can't rewrite that any other way.
+  if (opts.hostname) {
+    args.push(`--host-resolver-rules=MAP ${opts.hostname} 127.0.0.1`);
+  }
 
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: true,
     channel: 'chromium',
-    args: [
-      `--disable-extensions-except=${extDir}`,
-      `--load-extension=${extDir}`,
-      '--no-sandbox',
-    ],
+    args,
   });
   const sw =
     context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
   const extId = new URL(sw.url()).host;
 
   // Open fixture first so the active tab is enableable when the panel opens.
-  const fixtureUrl = `${origin}/rolecast.html`;
+  const fixturePath = opts.fixturePath ?? '/rolecast.html';
+  const fixtureOrigin = opts.hostname
+    ? `http://${opts.hostname}:${port}`
+    : origin;
+  const fixtureUrl = `${fixtureOrigin}${fixturePath}`;
   const fixture = await context.newPage();
   await fixture.goto(fixtureUrl);
 
@@ -116,7 +140,7 @@ export async function setupExtEnv(): Promise<ExtEnv> {
     await new Promise<void>((r) => server.close(() => r()));
   };
 
-  return { context, extId, fixtureOrigin: origin, fixtureUrl, panel, fixture, teardown };
+  return { context, extId, fixtureOrigin, fixtureUrl, panel, fixture, teardown };
 }
 
 /** Click the panel's enable button + wait for the content script to come up
@@ -130,7 +154,7 @@ export async function enableAndWaitForContent(env: ExtEnv): Promise<void> {
       const btn = document.querySelector<HTMLButtonElement>(
         'button[data-action="enable-site"]',
       );
-      return btn?.textContent === `Enable on ${origin}`;
+      return btn?.textContent === `Enable on ${new URL(origin).hostname}`;
     },
     env.fixtureOrigin,
     { timeout: 5_000 },

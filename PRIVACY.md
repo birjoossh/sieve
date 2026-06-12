@@ -1,6 +1,6 @@
 # Sieve — Privacy Policy
 
-_Last updated: 2026-05-25_
+_Last updated: 2026-06-12_
 
 Sieve is an open-source Chrome extension that hides items on
 the pages you visit. It is designed to keep your data on your device.
@@ -66,8 +66,8 @@ enabled.
 
 ## Open source
 
-Source is at [TODO insert repo URL]. PRs welcome.
+Source is at <https://github.com/birjoossh/sieve>. PRs welcome.
 
 ## Contact
 
-Issues / questions: [TODO insert email or issue tracker].
+Issues / questions: <https://github.com/birjoossh/sieve/issues>.

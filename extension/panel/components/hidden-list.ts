@@ -26,26 +26,30 @@ export function renderHiddenList(host: HTMLElement, state: HiddenListState): voi
   const allRestored = hidden.length > 0 && restoredCount === hidden.length;
   const allHidden = hidden.length > 0 && restoredCount === 0;
 
+  const head = document.createElement('div');
+  head.className = 'hidden-head';
+
   const h = document.createElement('h2');
   h.className = 'section-h';
   h.textContent = `Hidden (${hidden.length})`;
-  host.appendChild(h);
+  head.appendChild(h);
 
   if (hidden.length === 0) {
+    host.appendChild(head);
     const p = document.createElement('p');
     p.className = 'section-meta';
-    p.textContent = 'Nothing hidden yet.';
+    p.textContent = 'Nothing is hidden yet — items that match your filters will show up here.';
     host.appendChild(p);
     return;
   }
 
-  // Bulk-action row.
+  // Bulk-action row, inline with the heading.
   const bulk = document.createElement('div');
   bulk.className = 'bulk-actions';
 
   const restoreAll = document.createElement('button');
   restoreAll.type = 'button';
-  restoreAll.className = 'bulk-btn';
+  restoreAll.className = 'bulk-btn btn btn-ghost btn-sm';
   restoreAll.dataset['action'] = 'restore-all';
   restoreAll.textContent = 'Restore all';
   restoreAll.disabled = allRestored;
@@ -54,14 +58,15 @@ export function renderHiddenList(host: HTMLElement, state: HiddenListState): voi
 
   const hideAll = document.createElement('button');
   hideAll.type = 'button';
-  hideAll.className = 'bulk-btn';
+  hideAll.className = 'bulk-btn btn btn-ghost btn-sm';
   hideAll.dataset['action'] = 'hide-all';
   hideAll.textContent = 'Hide all';
   hideAll.disabled = allHidden;
   hideAll.onclick = () => state.onSetAll(false);
   bulk.appendChild(hideAll);
 
-  host.appendChild(bulk);
+  head.appendChild(bulk);
+  host.appendChild(head);
 
   // Per-item rows.
   const ul = document.createElement('ul');
@@ -73,25 +78,34 @@ export function renderHiddenList(host: HTMLElement, state: HiddenListState): voi
     li.dataset['itemId'] = item.id;
     li.dataset['state'] = item.state;
 
+    const main = document.createElement('div');
+    main.className = 'hidden-row-main';
+
     const label = document.createElement('span');
     label.className = 'item-label';
     label.textContent = item.label ?? item.id;
-    li.appendChild(label);
+    main.appendChild(label);
 
     if (item.reason !== undefined) {
       const reason = document.createElement('span');
       reason.className = 'item-reason';
-      reason.textContent = ` — ${item.reason}`;
-      li.appendChild(reason);
+      reason.textContent = `matched “${item.reason}”`;
+      main.appendChild(reason);
     }
+
+    li.appendChild(main);
 
     const restored = item.state === 'restored';
     const toggle = document.createElement('button');
     toggle.type = 'button';
-    toggle.className = 'row-toggle';
+    toggle.className = 'row-toggle btn btn-ghost btn-sm';
     toggle.dataset['action'] = restored ? 'hide' : 'restore';
     toggle.dataset['itemId'] = item.id;
     toggle.textContent = restored ? 'hide' : 'restore';
+    toggle.setAttribute(
+      'aria-label',
+      `${restored ? 'hide' : 'restore'} ${item.label ?? item.id}`,
+    );
     toggle.onclick = () => state.onSetItem(item.id, !restored);
     li.appendChild(toggle);
 

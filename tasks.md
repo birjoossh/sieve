@@ -21,8 +21,55 @@ top-down to resume.
 
 ```
 DONE: all 6 slices (0–6) + Spike A + Spike B + Slice-3 production wire-up.
-Suite: 114/114 green in 29.4s. Next session: real-site captures
-(Spike A → 6.2 8-capture re-validation) + Web Store submission.
+2026-06-10: 6.7 — P0 "React reverts the renderer's DOM wrap" FIXED.
+Renderer gained a second strategy: `renderMode: 'detached'` (Schema field,
+default 'wrap') collapses filtered items in place via `nf-filt-item` +
+`data-nf-reason` + injected CSS pseudo-elements — zero nodes inserted into
+the React-managed parent. Self-heal MutationObserver re-applies what React
+strips; wrap mode auto-falls-back to detached when a tracked wrapper is
+found disconnected while its item survived (protects unknown React sites).
+LINKEDIN_JOBS_NEW_STUB (v2 LazyColumn) pinned to detached. Hostile fixture
+react-revert.html + tests/6.7-detached-renderer.spec.ts cover fallback /
+explicit mode / restore + re-hide / self-heal / mode-hide. Suite: 127
+passed, 1 skipped (4.10 live).
+2026-06-11: store-readiness + UX wave in flight. Landed by lead: spend cap
+now enforced PRE-call on the SW discover path (getOrDiscover deps.spend →
+discoverSchema; cache hits no longer billed); toolbar click opens the side
+panel (sidePanel.setPanelBehavior); extension icons (16/32/48/128) generated
++ wired into manifest + esbuild copy; tests/testbed/global.d.ts now derives
+NFTestbed from runtime's TestbedAPI (was 44 drift errors). Panel UX overhaul
+(design system in panel.css, AI settings → collapsed <details>, hostname-only
+enable CTA, onboarding empty state, styled chips/buttons/dark mode) executed
+by a UX agent; enable-button copy assertions updated (ext-env.ts, 0.4, 0.6).
+2026-06-11 (later): ALL KNOWN BUGS CLOSED. 4.10 GREEN on live LinkedIn
+(SPA relay via SW tabs.onUpdated was the last fix). Live-verified on HN
+(3 bugs found + fixed: table wrap, labels, nested matches) and GitHub.
+Suite: 132 passed / 1 skipped (skip = 4.10 without NF_LINKEDIN_USER_DATA;
+passes with it). Badge feature shipped. Clean 168KB store zip.
+2026-06-11 (final): companions + detection precision + wrapper-loop all
+fixed and live-verified (HN: full list + no orphaned subtext; GitHub: 10
+precise items, "library" hides 3 cards, no hang; LinkedIn 4.10 re-passed
+18.1s post-changes). Promo screenshots at out/store-assets/ (hn-filtered,
+github-filtered, panel-hero — 1280x800). Suite: 134 passed / 1 skipped.
+2026-06-11 (release-ready): v0.1.0. Listing copy + permissions
+justification at out/store-assets/listing.txt; promo screenshots beside
+it; out/negative-filter-0.1.0.zip is the submission artifact. Suite: 134
+passed / 1 skipped (the skip passes with NF_LINKEDIN_USER_DATA).
+NEXT (open): submit to the Web Store (host PRIVACY.md at a public URL for
+the listing's privacy-policy field); git history is a single initial
+commit — commit/branch when the user asks.
+2026-06-12 (branding + submission kit): PRIVACY.md TODOs filled (repo =
+github.com/birjoossh/sieve, contact = issues). User-facing README.md
+written (hero, how-it-works, features, privacy, install, FAQ). Promo
+tiles generated via scripts/store-tiles.mjs (tile-small-440x280 +
+marquee-1400x560, regenerable). listing.txt expanded: single-purpose
+statement, data-usage disclosures, privacy-policy URL, asset manifest,
+submission checklist. typecheck clean; repackaged 0.1.0 zip verified
+(11 files, no testbed/maps). Everything for the dashboard now lives in
+out/store-assets/.
+NEXT (open): walk the checklist at out/store-assets/listing.txt —
+upload zip + assets + copy to the Web Store dashboard (manual, needs
+the developer account).
 ```
 
 (Update the line above after every completed task to point at the next one.)
@@ -530,6 +577,20 @@ Suite: 114/114 green in 29.4s. Next session: real-site captures
 (append one line per completed task — `YYYY-MM-DD · task-id · note`)
 
 ```
+2026-06-12 · bugs.md-batch-2 · Batch closed — all 7 bugs + 4 feedback items resolved/dispositioned (statuses annotated in bugs.md): #1 local page-content suggestions (content/suggest.ts, discriminative doc-frequency, zero network, ✦ works keyless; tests/4.15); #3 active-segment toggle styling; #5 Re-discover renders in the no-schema state; F1 OpenRouter preset button; F2 Hide/Show-only/Off polarity control (tests/4.14); #7 measured 32ms add→hide on fixture AND live HN — residual delay is origin rate limits on description fetches (F4 manual-apply declined; "checking"-state-during-scan noted as polish); F3 semantic filtering dispositioned to roadmap (needs PRIVACY.md consent design). Suite: 149 passed / 1 skipped. Zip repackaged (v0.1.0, 11 files).
+2026-06-12 · bugs.md-batch-1 · User-reported batch: (#2) parseFirstNumber handles comma thousands-separators ("HK$2,000" → 2000; first-number + k-suffix semantics preserved); (#4) containsAny falls back to whitespace-squashed compare ("Macbook" matches "Mac Book"); (#6) YouTube "list · 0 items": itemSetSelector matched 4 elements and the real container wasn't first → findItems gains knownItemSet param (mount passes the detected element) + bestRoot() heuristic (most item matches wins) — tests/2.10. 429 backoff refined: concurrent failures escalate once per cooldown window (was 4s→32s off one burst, stalling the next page's scan ~30s).
+2026-06-11 · deep-text-429 · Probe 6 (network accounting): page-1 scan = 20×200 + 5×429 — LinkedIn's jobs-guest window is ~20 req; page-2's burst went 48×429 / 0×200, so description filters can never match right after paging. DeepTextScanner now: (1) fetchDetailResult distinguishes 429 from a miss; (2) shared cross-instance cooldown with exponential backoff (4s→60s), re-queue on 429, MAX_FETCH_ATTEMPTS=4; (3) scan() orders new work viewport-first (getBoundingClientRect) so the limited budget covers the cards the user is looking at; (4) shared in-flight set; SPA debounce raised to 1200ms (URL churn arrives >400ms apart). 2 new 2.9 cases (backoff/recovery/cap + viewport order). Suite: 137 passed / 1 skipped.
+2026-06-11 · deep-text-rate-limit · Pagination root cause #2 (probes 1–5, live): page-2 swaps the WHOLE LazyColumn + churns 4 URL states; 4 un-debounced remounts × fresh scanner × 25 description fetches tripped LinkedIn's jobs-guest limiter (ground truth: 9/10 fetches failing); silent misses → "mandarin" stopped matching. Fixes: module-level shared deep-text cache (injectable for tests), 400ms trailing debounce in handleSpaUrlChange, single 12s re-scan pass for items still missing text. Suite: 135 passed / 1 skipped.
+2026-06-11 · 4.13 · User-reported "filter doesn't apply on next page" (v2 LazyColumn): pagination swaps a NESTED wrapper — same URL, same itemSet — and childList-only observation never surfaced the new cards; ctx.items stayed disconnected page-1 ghosts. MutationWatcher now observes subtree + scans added wrappers for nested items (renderer nodes excluded); content's onItemsAdded prunes disconnected + dedupes. fixtures/linkedin-paginated-lazycolumn.html + tests/4.13 e2e via linkedin.test host alias (real v2 stub, detached mode, ghost-pruning asserted). Suite: 135 passed / 1 skipped.
+2026-06-11 · 4.12 · MutationWatcher re-ingested the renderer's own `.filt` wrapper under tag-only selectors (`div.list > div` matches the wrapper) → infinite wrap loop wedging the page (live GitHub, 1-in-3 runs). mutations.ts gains isRendererNode() pre-filter. tests/4.12-watcher-wrapper-loop.spec.ts: zero ingestions after wrap + late genuine card still flows. MutationWatcher exposed on the testbed.
+2026-06-11 · detect-precision + companions · (1) localizeItemSet preferred the BARE leaf whenever it matched more than the scoped selector — for a generic leaf (`div`) that's the whole page (github.com: 212 "items" incl. header decorations). Now scoped wins whenever it covers the modal group; leaf only rescues scoping that LOSES cards. (2) findItems roots its query at the itemSet container when resolvable (defense for over-generic LLM/local selectors). GitHub live re-probe: 10 items, all real repo cards. (3) Multi-row table items: renderer hides/restores companion <tr>s (subtext/spacer up to next item, cap 3) in lock-step — closes the HN orphaned-subtext gap. fixtures/table-companions.html + 6.8 case 4. Suite: 133 passed / 1 skipped.
+2026-06-11 · 4.11 + 4.10-live · SPA navigation finally production-correct: sw.ts relays tabs.onUpdated URL changes as `spaNavigated` (new PanelToContent variant) → content's handleSpaUrlChange (idempotent per URL, stub-first, filter carryover) — the isolated-world history patch demonstrably never fires on real SPAs. tests/4.11-spa-relay.spec.ts (main-world pushState). 4.10 PASSED against live logged-in LinkedIn (17.9s): Lead filter → SPA search → v2 LazyColumn detached rendering holds → Mandarin deep-text. 4.10's pinned currentJobId removed (stale ids → HTTP error masquerading as auth failure). Suite: 132 passed / 1 skipped. Zip repackaged.
+2026-06-11 · 6.9 · Toolbar badge shows the per-tab hidden count. Zero new message types — the SW listens for content's existing itemStates broadcast (runtime.sendMessage fans out to SW + panel) and calls chrome.action.setBadgeText({tabId}) with the count of state==='filtered' rows (restored rows are visible, excluded). Badge clears on zero. tests/6.9-action-badge.spec.ts e2e: add phrase → '3', restore one → '2', remove chip → ''. Suite: 131 passed / 1 skipped. Store zip repackaged.
+2026-06-11 · findItems-pruning · Third live-HN bug: nested-table pages let the local itemSelector match ancestor rows whose text aggregates every nested item — one phrase match collapsed the whole page. findItems() keeps innermost matches only (drop any match containing another match). Live re-verified: HN full list + 9 in-place hidden bars; GitHub search filters in wrap mode; old.reddit headless is bot-walled (not a valid smoke target). Engine/renderer specs green.
+2026-06-11 · 6.8 · Live-Chrome smoke on news.ycombinator.com caught: (1) div-wrap inside <tbody> collapsed the entire story table (invalid table structure; revert-detection can't see it because the wrapper stays connected) → apply() force-switches to detached for TABLE_PART_TAGS items + tr-scoped detached CSS (cells display:none, reason as anonymous table-cell, no restored-row pseudo-bar to avoid column shift); (2) HIDDEN-list labels were synthetic nf-N ids for empty-fields schemas → readLabel falls back to item textContent (≤64 chars). fixtures/table-list.html + tests/6.8-table-detached.spec.ts (3 cases). Also packaging: zip excludes testbed/* + *.js.map and is rebuilt fresh (was shipping the internals-exposing testbed bundle; 892KB → 168KB).
+2026-06-11 · store-readiness · Spend cap enforced pre-call on the SW path: GetOrDiscoverDeps gains `spend?: SpendChecker`, forwarded into discoverSchema's existing 4.7 hook; sw.ts passes chromeStorageSpendChecker() and drops the manual recordSpend that billed cache hits. sidePanel.setPanelBehavior({openPanelOnActionClick:true}) in sw.ts — toolbar click now opens the panel (was a dead button on fresh installs). extension/icons/{16,32,48,128}.png generated (funnel + minus glyph), referenced from manifest `icons` + `action.default_icon`, copied by esbuild's copyStaticAssets. tests/testbed/global.d.ts rewritten to `interface NFTestbed extends TestbedAPI` (runtime.ts exports the interface) — kills the 44-error drift class permanently.
+2026-06-10 · 6.7 · Detached render mode + wrap→detached auto-fallback (P0 React revert fix). shared/types.ts: Schema.renderMode?: 'wrap'|'detached'. renderer.ts: detached path mutates only class/data attrs on the item (nf-filt-item / nf-restored / data-nf-reason / data-nf-id), reason + re-hide affordance via ::before pseudo-elements, document-capture click delegation (restored cards only re-hide on direct item hits in the top-bar zone so card links keep working), microtask-debounced self-heal observer (idempotent re-apply, converges — no React fight loop), wrapRevertDetected() in apply() + heal() flips the instance to detached permanently and re-applies lastVerdicts; new Renderer.disconnect() called from index.ts mount() teardown. schema-stub.ts: LINKEDIN_JOBS_NEW_STUB renderMode:'detached'. testbed mountRenderer gained a schemaPatch overlay. New fixtures/react-revert.html (hostile inline reconciler: removes foreign children, rescues reparented cards, className resets on timer + window.__reactRender) + tests/6.7-detached-renderer.spec.ts (5 cases). 4.10 phase-2 DOM assertion widened to accept .filt OR .nf-filt-item; engine assertions untouched; still skipped without NF_LINKEDIN_USER_DATA. Suite: 127 passed / 1 skipped in 36.7s.
+2026-06-05 · linkedin-v2 · `/jobs/search-results/` LazyColumn redeploy. schema-stub.ts adds LINKEDIN_JOBS_NEW_STUB (`site:linkedin:jobs:v2`) targeting `[componentkey="SearchResultsMainContent"]` + `div[role="button"][componentkey^="job-card-component-ref-"]`; registered before the v1 stub so the new layout wins. deep-text.ts itemDetailUrl prepends a componentkey-based id parse before the legacy `data-occludable-job-id` / `/jobs/view/` paths. Verified live via MCP Playwright (logged-in, 1440×900): 25 items detected, 5/5 jobs-guest fetches OK, 3/5 first-batch descriptions contain "mandarin" (cards hold zero — deep-text is load-bearing). dist rebuilt. User must reload extension + tab + re-toggle enable.
 2026-05-23 · 0.1 · esbuild→3 bundles, minimal MV3 manifest, Playwright smoke loads ext via chromium channel — both tests green.
 2026-05-23 · 0.2 · manifest: sidePanel/scripting/alarms/storage + optional_host_permissions:[<all_urls>], side_panel:panel.html. Runtime asserts no origins auto-granted; <all_urls> only in optional.
 2026-05-23 · 0.3 · shared/types.ts: MESSAGE_VERSION=1, PanelMsg/SwToPanel unions (ping/pong subset), type-guards + sendFromPanel wrapper. sw.ts listens via isPanelMsg; malformed msgs silently dropped. Gate green: ping → pong v:1 round-trip from extension page.
@@ -583,6 +644,28 @@ Suite: 114/114 green in 29.4s. Next session: real-site captures
 ## Handoff
 
 (when ending a session, **prepend** a block here. Most recent at top.)
+
+```
+### Handoff — 2026-06-11 (team-lead hardening session)
+Cursor:        all slices + 6.7/6.8/6.9 done; suite 131 passed / 1 skipped
+Last action:   final regression + repackage after badge feature (6.9)
+Files touched: renderer.ts (detached mode follow-ups: table-part force-switch,
+               readLabel textContent fallback), engine.ts (findItems innermost-
+               match pruning), sw.ts (spend pre-check, panel-on-action-click,
+               badge), cache.ts (deps.spend), manifest+icons+esbuild,
+               scripts/package.mjs (exclude testbed/*.map), full panel redesign
+               (panel.css/html/ts + components), tests 6.8/6.9 + fixtures
+               table-list.html, testbed global.d.ts derives from runtime.
+Tests:         131 passed / 1 skipped (4.10 live LinkedIn, needs
+               NF_LINKEDIN_USER_DATA). Live-Chrome verified on
+               news.ycombinator.com + github.com search; old.reddit headless
+               is bot-walled (don't smoke against it).
+Known issues:  HN hidden story leaves its subtext <tr> visible (multi-row
+               item concept needed); GitHub search over-detects (212 "items")
+               though filtering works; LinkedIn detached mode unverified live.
+Next step:     run 4.10 headed with a logged-in profile; consider multi-row
+               items; Web Store listing copy/screenshots for submission.
+```
 
 ```
 ### Handoff — YYYY-MM-DD HH:MM

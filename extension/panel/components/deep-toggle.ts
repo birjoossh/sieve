@@ -33,7 +33,17 @@ export function renderDeepToggle(host: HTMLElement, state: DeepToggleState): voi
   input.checked = state.deepOn;
   input.onchange = () => state.onToggleDeep(input.checked);
   row.appendChild(input);
-  row.appendChild(document.createTextNode(' Deep scan (opens hidden tabs)'));
+
+  const text = document.createElement('span');
+  text.className = 'deep-toggle-text';
+  const title = document.createElement('span');
+  title.textContent = 'Deep scan';
+  text.appendChild(title);
+  const sub = document.createElement('span');
+  sub.className = 'hint';
+  sub.textContent = 'Also checks each item’s detail page (opens hidden tabs).';
+  text.appendChild(sub);
+  row.appendChild(text);
   host.appendChild(row);
 
   if (state.modalOpen) {
@@ -42,9 +52,11 @@ export function renderDeepToggle(host: HTMLElement, state: DeepToggleState): voi
     modal.dataset['role'] = 'deep-warning-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'deep-modal-title');
 
     const title = document.createElement('h3');
     title.className = 'deep-modal-title';
+    title.id = 'deep-modal-title';
     title.textContent = 'Deep scan opens hidden tabs';
     modal.appendChild(title);
 
@@ -59,7 +71,7 @@ export function renderDeepToggle(host: HTMLElement, state: DeepToggleState): voi
 
     const dismiss = document.createElement('button');
     dismiss.type = 'button';
-    dismiss.className = 'deep-modal-dismiss';
+    dismiss.className = 'deep-modal-dismiss btn btn-primary';
     dismiss.dataset['action'] = 'dismiss-deep-warning';
     dismiss.textContent = 'I understand';
     dismiss.onclick = () => state.onDismissWarning();

@@ -26,6 +26,8 @@
 // Pure: never mutates the DOM, never reads layout (offsetWidth / etc.).
 // Returns the container Element, or null when nothing meets the threshold.
 
+import { stableClasses, stableShape } from './stable-classes.js';
+
 /** Tags that never carry user-visible repeating content — skipped wholesale
  *  to keep `<head>` / inline `<script>` blocks from competing. */
 const NON_CONTENT_TAGS = new Set([
@@ -43,6 +45,16 @@ const NON_CONTENT_TAGS = new Set([
 /** Below 3 siblings, it's a tuple, not a list — skip. */
 const MIN_GROUP_SIZE = 3;
 
+/** Per-item descendant-count cap used in scoring. Without it the score
+ *  (groupSize × meanDescendants) is dominated by a handful of *enormous*
+ *  wrapper elements — on real SPAs (LinkedIn) a top-level cluster of 5 giant
+ *  layout `<div>`s out-scored the actual 25-card job list, so detect()
+ *  returned the wrapper and the generated selector matched a single element
+ *  ("Detected: list · 1 item"). Capping the per-item term lets a long list of
+ *  moderately-rich cards win over a few massive containers. 40 sits above a
+ *  typical rich card's element count and well below a page-section wrapper's. */
+const DESCENDANT_CAP = 40;
+
 /** Structural signature for one Element. Used to group siblings: two
  *  siblings count as "structurally similar" iff their signatures match.
  *
@@ -53,8 +65,12 @@ const MIN_GROUP_SIZE = 3;
  *  level of similarity the renderer needs.
  */
 function signatureOf(el: Element): string {
-  const classes = Array.from(el.classList).sort().join('.');
-  return classes ? `${el.tagName}.${classes}` : el.tagName;
+  // Volatile per-item / per-deploy class tokens (CSS-in-JS hashes, Ember
+  // ids, etc.) are stripped via the shared filter so structurally-identical
+  // cards group together. Before this, a list whose cards each carried a
+  // unique generated class fragmented into singletons and detect() returned
+  // null — the "No list detected" bug on real SPA sites.
+  return stableShape(el);
 }
 
 function elementChildren(parent: Element): Element[] {
@@ -100,9 +116,44 @@ function evaluateParent(parent: Element): Candidate | null {
     let total = 0;
     for (const el of group) total += el.getElementsByTagName('*').length;
     const meanDescendants = total / group.length;
-    const score = group.length * meanDescendants;
+    const score = group.length * Math.min(meanDescendants, DESCENDANT_CAP);
     if (!best || score > best.score) {
       best = { container: parent, group, signature: sig, score };
+    }
+  }
+
+  // Fallback: residual per-item class noise that no strip pattern catches
+  // (e.g. a site's own `state-7f3a` tokens) still fragments the stable-class
+  // groups above. When that leaves *no* qualifying class-group, retry the
+  // grouping by tag name alone. Only triggers when class-grouping found
+  // nothing — so clean fixtures, where a class-group already wins, are
+  // unaffected and never regress.
+  if (!best) best = evaluateParentByTag(parent, children);
+  return best;
+}
+
+/** Tag-only fallback grouping: cluster the parent's children by bare tag
+ *  name, ignoring classes entirely. The same scoring (size × mean
+ *  descendants) picks the richest cluster. Used only when stable-class
+ *  grouping yields nothing, so it can rescue lists whose per-item class
+ *  noise defeats the pattern filter without affecting normal pages. */
+function evaluateParentByTag(parent: Element, children: Element[]): Candidate | null {
+  const groups = new Map<string, Element[]>();
+  for (const child of children) {
+    const list = groups.get(child.tagName);
+    if (list) list.push(child);
+    else groups.set(child.tagName, [child]);
+  }
+
+  let best: Candidate | null = null;
+  for (const [tag, group] of groups) {
+    if (group.length < MIN_GROUP_SIZE) continue;
+    let total = 0;
+    for (const el of group) total += el.getElementsByTagName('*').length;
+    const meanDescendants = total / group.length;
+    const score = group.length * Math.min(meanDescendants, DESCENDANT_CAP);
+    if (!best || score > best.score) {
+      best = { container: parent, group, signature: tag, score };
     }
   }
   return best;
@@ -192,10 +243,12 @@ export interface GeneralizedSelectors {
  */
 function leafSelector(el: Element): string {
   const tag = el.tagName.toLowerCase();
-  const classes = Array.from(el.classList);
-  if (classes.length === 0) return tag;
+  // Mirror signatureOf(): drop volatile per-item classes so the generated
+  // selector matches every same-shape sibling, not just the picked card.
+  const classes = stableClasses(el);
+  if (classes === '') return tag;
   const escaped = classes
-    .sort()
+    .split('.')
     .map((c) => `.${CSS.escape(c)}`)
     .join('');
   return `${tag}${escaped}`;
@@ -278,4 +331,72 @@ export function generalize(picked: Element): GeneralizedSelectors | null {
   }
 
   return { itemSetSelector, itemSelector };
+}
+
+/** Build robust selectors for an already-detected item-set container without
+ *  the LLM. Unlike generalize() (which is strict and parent-relative for the
+ *  manual picker), this is lenient: it keys off the *modal* stable-class shape
+ *  among the container's children and returns a global `itemSelector`. It's
+ *  what lets keyword filtering work on real SPA lists where the LLM either
+ *  isn't available or returns a selector matching a single card.
+ *
+ *  Returns null when the container has no qualifying repeated child shape.
+ *  `count` is how many elements the returned itemSelector matches document-
+ *  wide, so callers can compare it against an LLM selector and keep whichever
+ *  captures more items. */
+export function localizeItemSet(
+  itemSet: Element,
+): { itemSetSelector: string; itemSelector: string; count: number } | null {
+  const children = elementChildren(itemSet);
+  if (children.length < MIN_GROUP_SIZE) return null;
+
+  // Modal stable-class shape among the children — tolerant of a few cards
+  // carrying an extra state class (viewed / promoted / selected).
+  const counts = new Map<string, { count: number; sample: Element }>();
+  for (const child of children) {
+    const sig = signatureOf(child);
+    const entry = counts.get(sig);
+    if (entry) entry.count += 1;
+    else counts.set(sig, { count: 1, sample: child });
+  }
+  let modal: { count: number; sample: Element } | null = null;
+  for (const entry of counts.values()) {
+    if (!modal || entry.count > modal.count) modal = entry;
+  }
+  if (!modal || modal.count < MIN_GROUP_SIZE) return null;
+
+  const doc = itemSet.ownerDocument;
+  if (!doc) return null;
+
+  const leaf = leafSelector(modal.sample);
+  const itemSetSelector = uniqueSelectorFor(itemSet);
+  const scoped = `${itemSetSelector} > ${leaf}`;
+
+  // Prefer the scoped selector when it covers the modal group; fall back to
+  // the bare leaf only when scoping (via a hashed/ambiguous container path)
+  // LOSES cards. Never prefer the leaf for matching MORE — a generic leaf
+  // like `div` matches the whole page (seen live on github.com search:
+  // bare `div` → 212 "items" including header decorations).
+  const scopedCount = safeCount(doc, scoped);
+  const leafCount = safeCount(doc, leaf);
+  let itemSelector: string;
+  let count: number;
+  if (scopedCount >= modal.count) {
+    itemSelector = scoped;
+    count = scopedCount;
+  } else {
+    itemSelector = leaf;
+    count = leafCount;
+  }
+  if (count < MIN_GROUP_SIZE) return null;
+  return { itemSetSelector, itemSelector, count };
+}
+
+/** querySelectorAll length that never throws on a malformed selector. */
+function safeCount(doc: Document, selector: string): number {
+  try {
+    return doc.querySelectorAll(selector).length;
+  } catch {
+    return 0;
+  }
 }

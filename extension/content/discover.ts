@@ -15,10 +15,43 @@
 // Hint forwarding (3.5): `discover()` takes an optional `hint`; it's
 // passed straight through to the SW request and onward to the prompt.
 
-import { classify, detect } from './detect.js';
+import { classify, detect, localizeItemSet } from './detect.js';
 import { fingerprintItemSet } from './fingerprint.js';
 import { distill } from '../background/llm.js';
 import type { LayoutKind, Schema } from '../shared/types.js';
+
+/** Count an itemSelector's matches without throwing on a malformed string. */
+function countMatches(doc: Document, selector: string): number {
+  try {
+    return doc.querySelectorAll(selector).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Build a schema from local detection alone — no LLM. Fields are empty,
+ *  which is all the free-text phrase filter (ALL_TEXT_FIELD) needs; numeric /
+ *  named-field filters still require an LLM schema. Used both as the fallback
+ *  when the LLM call fails or no key is set, and as the selector source when
+ *  the LLM under-matches (returns a 1-card selector on a 25-card list). */
+export function buildLocalSchema(doc: Document): DiscoverResult | null {
+  const itemSet = detect(doc);
+  if (!itemSet) return null;
+  const local = localizeItemSet(itemSet);
+  if (!local) return null;
+  const fingerprint = fingerprintItemSet(itemSet);
+  if (!fingerprint) return null;
+  const schema: Schema = {
+    fingerprint,
+    layout: classify(itemSet),
+    itemSetSelector: local.itemSetSelector,
+    itemSelector: local.itemSelector,
+    fields: {},
+    source: 'local',
+    discoveredAt: Date.now(),
+  };
+  return { schema, itemSet };
+}
 
 export interface DiscoverFetchRequest {
   fingerprint: string;
@@ -71,5 +104,17 @@ export async function discover(
   if (opts.force === true) req.force = true;
 
   const schema = await ctx.fetchSchema(req);
+
+  // Selector repair: LLMs frequently return an itemSelector that matches only
+  // the one card they "saw" in the distilled DOM (the classic LinkedIn
+  // "Detected: list · 1 item"). If a local generalization of the same detected
+  // item-set captures more elements, swap the selectors in — keeping the LLM's
+  // field mappings intact for named/numeric filters.
+  const local = localizeItemSet(itemSet);
+  if (local && local.count > countMatches(doc, schema.itemSelector)) {
+    schema.itemSetSelector = local.itemSetSelector;
+    schema.itemSelector = local.itemSelector;
+  }
+
   return { schema, itemSet };
 }

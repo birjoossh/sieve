@@ -1,0 +1,42 @@
+## These are the bugs and feedbacks identified by human users when using the product
+
+(Status annotations added 2026-06-12 — details per item in tasks.md Progress log and memory.md.)
+
+### Bugs
+1. Suggested phrases should be from the current page contents.
+   — **FIXED.** "✦ Suggest phrases" now extracts suggestions locally from the detected items (discriminative tokens/bigrams across cards, original casing). No LLM, no network, works without an API key. Specs: tests/4.15-local-suggestions.spec.ts.
+
+2. Hint provided natural language doesnt work. Eg. (Carousell)[https://www.carousell.com.hk/search/apple%20mac%20mini?addRecent=true&canChangeKeyword=true&includeSuggestions=true&srsltid=AfmBOorh4XfAJy6dd8QhqNAeqjh73_4WuTWXoNzzt90ekxt0vHhhu37U&t-search_query_source=direct_search]
+Hint: Price is in the title
+Filter: Price > HK 2000
+Clicking on Re-discover and later apply filter doesnt work.
+   — **FIXED (root cause).** "HK$2,000" parsed as 2 — the number parser stopped at the thousands separator, so "Price > 2000" could never fire. Comma-grouped numbers now parse to their full value. Specs in tests/4.1-predicates.spec.ts. If Carousell still misbehaves after this, re-report — the hint/re-discover path itself was verified separately (#5).
+
+3. Color on the Collapse|Hidden toggle is a bit confusing. We should color the side which is actually active at the moment.
+   — **FIXED.** Active segment is filled accent + white text with a pressed inset; inactive is ghosted. Light + dark.
+
+4. Tried on this website : https://www.facebook.com/marketplace/hongkong/search?query=apple%20mac%20mini
+Filter "Macbook" should apply on both "Macbook" AND "Mac Book" but its not
+   — **FIXED.** Phrase matching now also compares with all whitespace removed on both sides, so "Macbook" matches "Mac Book" and "mac book" matches "MacBook". Accepted collateral: merged-word matches like "so up" → "soup" (documented in the spec).
+
+5. sometime we see below but there is no re-discover button
+   — **FIXED.** The hint input + Re-discover button now render whenever the site is enabled, including the no-schema state the error message describes.
+
+6. Tried on https://www.youtube.com/watch?v=vgZSn10zids with filter "claude" but teh filter were only partially applied.
+   — **FIXED + live-verified on that exact URL.** Root cause: the generated item-set selector matched 4 containers and item lookup rooted at the wrong (empty) one — the page mounted with 0 items. Item lookup now picks the container that actually holds the items. Live result: 20 related videos detected, all 16 "claude" matches hidden.
+
+7. Sometimes there is a delay between user adding a filter and it getting applied. Investigate how the latency could be reduced.
+   — **INVESTIGATED.** Card-text filters apply in ~32 ms end-to-end (measured). The perceivable delays come from description-based matches (e.g. LinkedIn keywords that only appear in the job description): those need a network fetch per item, and LinkedIn rate-limits to ~20 fetches per window. This path was overhauled (persistent cache, viewport-priority fetching so visible cards resolve first, 429-aware backoff) — visible cards now resolve as fast as the origin allows. Residual delay is origin-imposed, not extension overhead.
+
+### Feedback
+1. Set a default provider for OpenAI - https://openrouter.ai/api
+   — **SHIPPED.** A "Use OpenRouter" preset button appears next to Base URL when provider = OpenAI; placeholder names both endpoints.
+
+2. Perhaps we can have toogle button into negative, positive or show all filter. Negative filter is default behaviour.
+   — **SHIPPED.** 3-way control above the chips: "Hide matches" (default) / "Show only matches" / "Off" (chips retained, filters not applied). Spec: tests/4.14-polarity-toggle.spec.ts.
+
+3. There is no semantic filtering. eg. On (You tube)[https://www.youtube.com/], i used filter "indian mythology" but none of the Indian mythology videos were hidden
+   — **ROADMAP.** Needs per-item LLM/embedding classification, which conflicts with the current privacy contract (only a content-free DOM skeleton may leave the browser) and would cost per-scroll LLM calls. Sketch: opt-in "semantic" phrases routed through the BYO-key provider with batched item titles, gated behind an explicit consent + PRIVACY.md update + spend-cap integration. Not started.
+
+4. Sometimes the filters are not immediately appplied. We can supply with a manual apply button to apply the filter. Default behaviour is the current behaviour of auto apply filter
+   — **DECLINED for now** (see Bug 7): auto-apply is ~32 ms; a manual apply button would not make description-dependent matches faster since the wait is the origin's rate limit. If the perceived-latency complaint persists, the better fix is showing the existing "⏳ checking" state on cards whose descriptions are still downloading — noted as polish in tasks.md.

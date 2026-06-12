@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>LinkedIn — search results (mock, LazyColumn pagination)</title>
+</head>
+<body>
+  <!--
+    Models the user-reported "filter doesn't apply on the next page" bug on
+    linkedin.com/jobs/search-results/: the LazyColumn keeps its container,
+    and pagination REPLACES a nested wrapper with a new one holding the
+    next page's cards — no URL change, so the SPA relay never fires. Only
+    a subtree-aware MutationWatcher can see the new cards.
+
+    Page 1: ids 2001-2005, ONE card mentions "mandarin".
+    Page 2: ids 2101-2105, TWO cards mention "mandarin".
+  -->
+  <main>
+    <div componentkey="SearchResultsMainContent" data-testid="lazy-column" data-component-type="LazyColumn">
+      <div class="page-wrapper" data-page="1">
+        <div role="button" componentkey="job-card-component-ref-2001">
+          <div componentkey="job-card-component-ref-2001">
+            <h3>Backend Engineer</h3>
+            <div>Acme Corp · Hong Kong</div>
+            <p>Distributed systems role. Mandarin fluency required for vendor calls.</p>
+          </div>
+        </div>
+        <div role="button" componentkey="job-card-component-ref-2002">
+          <div componentkey="job-card-component-ref-2002">
+            <h3>Platform SRE</h3>
+            <div>Globex · Remote</div>
+            <p>Run the multi-region control plane.</p>
+          </div>
+        </div>
+        <div role="button" componentkey="job-card-component-ref-2003">
+          <div componentkey="job-card-component-ref-2003">
+            <h3>Data Engineer</h3>
+            <div>Hooli · Singapore</div>
+            <p>Own the lakehouse ingestion paths.</p>
+          </div>
+        </div>
+        <div role="button" componentkey="job-card-component-ref-2004">
+          <div componentkey="job-card-component-ref-2004">
+            <h3>iOS Engineer</h3>
+            <div>Initech · Taipei</div>
+            <p>Ship the consumer app.</p>
+          </div>
+        </div>
+        <div role="button" componentkey="job-card-component-ref-2005">
+          <div componentkey="job-card-component-ref-2005">
+            <h3>ML Engineer</h3>
+            <div>Umbrella · Tokyo</div>
+            <p>Ranking models for the feed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button id="next-page" type="button">Next page</button>
+  </main>
+
+  <script>
+    document.getElementById('next-page').addEventListener('click', () => {
+      const column = document.querySelector('[componentkey="SearchResultsMainContent"]');
+      const fresh = document.createElement('div');
+      fresh.className = 'page-wrapper';
+      fresh.dataset.page = '2';
+      const cards = [
+        ['2101', 'Solutions Architect', 'EcoCeres · Hong Kong', 'Client-facing role. Mandarin considered a plus.'],
+        ['2102', 'Frontend Engineer', 'Vandelay · Remote', 'Design-system heavy product work.'],
+        ['2103', 'Engineering Manager', 'Wayne Tech · Shenzhen', 'Mandarin required to coordinate with the hardware team.'],
+        ['2104', 'Security Engineer', 'Oscorp · Seoul', 'AppSec for the payments stack.'],
+        ['2105', 'DevOps Engineer', 'Stark Industries · Sydney', 'Kubernetes platform team.'],
+      ];
+      for (const [id, title, meta, body] of cards) {
+        const outer = document.createElement('div');
+        outer.setAttribute('role', 'button');
+        outer.setAttribute('componentkey', 'job-card-component-ref-' + id);
+        const inner = document.createElement('div');
+        inner.setAttribute('componentkey', 'job-card-component-ref-' + id);
+        inner.innerHTML = '<h3>' + title + '</h3><div>' + meta + '</div><p>' + body + '</p>';
+        outer.appendChild(inner);
+        fresh.appendChild(outer);
+      }
+      column.querySelector('.page-wrapper').replaceWith(fresh);
+    });
+  </script>
+</body>
+</html>

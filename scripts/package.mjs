@@ -5,7 +5,7 @@
 // The version comes from manifest.json. Uses the system `zip`
 // command — present on macOS / Linux dev machines.
 
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -24,13 +24,22 @@ async function main() {
   if (!version) throw new Error('manifest.json has no version');
   const outDir = resolve(ROOT, 'out');
   await mkdir(outDir, { recursive: true });
-  const outZip = resolve(outDir, `sieve-${version}.zip`);
+  const outZip = resolve(outDir, `negative-filter-${version}.zip`);
+  // zip updates archives in place — a leftover zip would keep entries that
+  // are now excluded. Always start fresh.
+  await rm(outZip, { force: true });
   // -X strips macOS .DS_Store + extra fields; -r recurses; -j is NOT
-  // used so the dir structure is preserved.
-  execFileSync('zip', ['-X', '-r', outZip, '.', '-i', '*'], {
-    cwd: distDir,
-    stdio: 'inherit',
-  });
+  // used so the dir structure is preserved. The testbed bundle is a
+  // test-only seam exposing internals and the .map files are dev-only —
+  // neither belongs in the store artifact.
+  execFileSync(
+    'zip',
+    ['-X', '-r', outZip, '.', '-x', 'testbed/*', '-x', '*.js.map'],
+    {
+      cwd: distDir,
+      stdio: 'inherit',
+    },
+  );
   console.log(`packaged → ${outZip}`);
 }
 

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LinkedIn-shaped jobs page — real-site detection fixture</title>
+    <style>
+      body { font: 14px/1.4 system-ui, sans-serif; }
+      .jobs-list { display: flex; flex-direction: column; gap: 12px; }
+      .job-card { padding: 10px; border: 1px solid #ccc; }
+    </style>
+  </head>
+  <body>
+    <!-- Models the failure mode from the real LinkedIn /jobs page: a nav
+         bar of identically-classed <li>s (a strong decoy that the old
+         detector picked) plus a job list whose cards each carry a UNIQUE
+         per-item class token (Ember view ids surfaced as classes,
+         occlusion-state tokens). The old signatureOf() hashed the full
+         class list, so the 6 cards fragmented into 6 singletons → no
+         group ≥3 → detect() returned null OR the nav won → "No list
+         detected." With volatile-class stripping + the tag-only fallback
+         the cards re-collapse into one group and `.jobs-list` wins. -->
+    <header class="global-nav">
+      <nav>
+        <ul class="global-nav__primary-items">
+          <li class="global-nav__primary-item"><a>Home</a></li>
+          <li class="global-nav__primary-item"><a>My Network</a></li>
+          <li class="global-nav__primary-item"><a>Jobs</a></li>
+          <li class="global-nav__primary-item"><a>Messaging</a></li>
+          <li class="global-nav__primary-item"><a>Notifications</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main>
+      <section class="scaffold-layout__list">
+        <h2>Top job picks for you</h2>
+        <ul class="jobs-list">
+          <li class="job-card ember-view occludable-update ember1421">
+            <div class="artdeco-entity-lockup__content">
+              <a class="job-card__link"><strong class="job-card__title">Head of AI</strong></a>
+              <div class="job-card__subtitle">Hays</div>
+              <ul class="job-card__metadata"><li class="job-card__meta">Hong Kong</li></ul>
+              <div class="job-card__footer"><span class="comp">HK$1.2M</span></div>
+            </div>
+          </li>
+          <li class="job-card ember-view occludable-update ember1487">
+            <div class="artdeco-entity-lockup__content">
+              <a class="job-card__link"><strong class="job-card__title">Director of Engineering</strong></a>
+              <div class="job-card__subtitle">Pinpoint Asia</div>
+              <ul class="job-card__metadata"><li class="job-card__meta">Hong Kong (On-site)</li></ul>
+              <div class="job-card__footer"><span class="comp">HK$1.6M</span></div>
+            </div>
+          </li>
+          <li class="job-card ember-view occludable-update ember1502">
+            <div class="artdeco-entity-lockup__content">
+              <a class="job-card__link"><strong class="job-card__title">Director, Hive Lead</strong></a>
+              <div class="job-card__subtitle">Standard Chartered</div>
+              <ul class="job-card__metadata"><li class="job-card__meta">Hong Kong SAR</li></ul>
+              <div class="job-card__footer"><span class="comp">HK$1.8M</span></div>
+            </div>
+          </li>
+          <li class="job-card ember-view occludable-update ember1566">
+            <div class="artdeco-entity-lockup__content">
+              <a class="job-card__link"><strong class="job-card__title">VP, Digital Assets</strong></a>
+              <div class="job-card__subtitle">Crypto Bank</div>
+              <ul class="job-card__metadata"><li class="job-card__meta">Singapore</li></ul>
+              <div class="job-card__footer"><span class="comp">SG$300k</span></div>
+            </div>
+          </li>
+          <li class="job-card ember-view occludable-update ember1603">
+            <div class="artdeco-entity-lockup__content">
+              <a class="job-card__link"><strong class="job-card__title">Blockchain Architect</strong></a>
+              <div class="job-card__subtitle">Web3 Labs</div>
+              <ul class="job-card__metadata"><li class="job-card__meta">Remote</li></ul>
+              <div class="job-card__footer"><span class="comp">US$240k</span></div>
+            </div>
+          </li>
+          <li class="job-card ember-view occludable-update ember1644">
+            <div class="artdeco-entity-lockup__content">
+              <a class="job-card__link"><strong class="job-card__title">Head of Crypto Custody</strong></a>
+              <div class="job-card__subtitle">Vault Digital</div>
+              <ul class="job-card__metadata"><li class="job-card__meta">Hong Kong</li></ul>
+              <div class="job-card__footer"><span class="comp">HK$2.0M</span></div>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

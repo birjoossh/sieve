@@ -108,7 +108,8 @@ test.describe('0.6 — enable/disable a domain end-to-end', () => {
           'button[data-action="enable-site"]',
         );
         if (!btn) return false;
-        const expectedLabel = enabled ? `Disable on ${origin}` : `Enable on ${origin}`;
+        const host = new URL(origin).hostname;
+        const expectedLabel = enabled ? `Disable on ${host}` : `Enable on ${host}`;
         return btn.textContent === expectedLabel && btn.dataset.enabled === String(enabled);
       },
       { origin, enabled },

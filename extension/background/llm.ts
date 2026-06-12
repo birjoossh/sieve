@@ -351,13 +351,14 @@ function validateSchemaShape(
     source: 'llm',
     discoveredAt: now,
   };
-  // Optional fields: drop silently when the model emits the wrong shape
-  // (e.g. null, {}). The required core (layout/selectors/fields) is what
-  // gates discovery; losing detail navigation is degradation, not failure.
-  if ('detailLinkSelector' in r && isNonEmptyString(r['detailLinkSelector'])) {
+  // Detail selectors are OPTIONAL niceties (deep/detail-page filtering). A
+  // model that emits them in the wrong shape must NOT sink an otherwise-valid
+  // schema — the core list filter works without them. Drop malformed values
+  // instead of throwing.
+  if (isNonEmptyString(r['detailLinkSelector'])) {
     schema.detailLinkSelector = r['detailLinkSelector'];
   }
-  if ('detailFieldSelectors' in r && isStringRecord(r['detailFieldSelectors'])) {
+  if (isStringRecord(r['detailFieldSelectors'])) {
     schema.detailFieldSelectors = r['detailFieldSelectors'];
   }
   return schema;
@@ -504,6 +505,10 @@ export interface SuggestPhrasesOpts {
    *  from the active filter's field + polarity. */
   intent: string;
   model?: string;
+  /** Custom base URL — same semantics as `DiscoverOpts.baseUrl`. Without
+   *  this, an OpenRouter user with provider=openai would hit api.openai.com
+   *  by accident and fail with "Failed to fetch" (no host permission). */
+  baseUrl?: string;
   fetcher?: typeof fetch;
   now?: () => number;
   spend?: SpendChecker;
@@ -558,6 +563,7 @@ export async function suggestPhrases(opts: SuggestPhrasesOpts): Promise<string[]
     // so we can reuse the provider plumbing without forking it.
     fingerprint: 'suggest',
     ...(opts.model !== undefined ? { model: opts.model } : {}),
+    ...(opts.baseUrl !== undefined ? { baseUrl: opts.baseUrl } : {}),
     fetcher,
   };
   const result =

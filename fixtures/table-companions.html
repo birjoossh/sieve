@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- HN-shaped multi-row items: each logical story is a title <tr> followed
+     by a subtext <tr>. Only the title row matches itemSelector — the
+     renderer must hide/show the companion subtext row in lock-step (6.8). -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>table-companions — multi-row story table</title>
+    <style>
+      body { font: 14px/1.4 system-ui, sans-serif; margin: 2rem; }
+      table.stories { border-collapse: collapse; width: 720px; }
+      td { padding: 4px 10px; }
+      tr.subtext td { color: #888; font-size: 12px; padding-top: 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Front page</h1>
+    <table class="stories">
+      <tbody>
+        <tr class="story" data-id="c-001">
+          <td class="title"><a href="#1">New AI benchmark released by research lab</a></td>
+        </tr>
+        <tr class="subtext" data-for="c-001">
+          <td>312 points by alice · 198 comments</td>
+        </tr>
+        <tr class="story" data-id="c-002">
+          <td class="title"><a href="#2">PostgreSQL 18 brings async I/O</a></td>
+        </tr>
+        <tr class="subtext" data-for="c-002">
+          <td>540 points by bob · 230 comments</td>
+        </tr>
+        <tr class="story" data-id="c-003">
+          <td class="title"><a href="#3">Why we rewrote our compiler in Zig</a></td>
+        </tr>
+        <tr class="subtext" data-for="c-003">
+          <td>120 points by carol · 415 comments</td>
+        </tr>
+        <tr class="story" data-id="c-004">
+          <td class="title"><a href="#4">The economics of self-hosting</a></td>
+        </tr>
+        <tr class="subtext" data-for="c-004">
+          <td>98 points by dave · 77 comments</td>
+        </tr>
+        <tr class="story" data-id="c-005">
+          <td class="title"><a href="#5">A field guide to database indexes</a></td>
+        </tr>
+        <tr class="subtext" data-for="c-005">
+          <td>64 points by erin · 12 comments</td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>
