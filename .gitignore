@@ -7,3 +7,4 @@ test-results/
 .playwright-mcp/
 /linkedin-jobs-search.png
 /linkedin-search-results.png
+.claude/settings.local.json
