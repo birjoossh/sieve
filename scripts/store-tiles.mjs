@@ -15,9 +15,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const OUT = resolve(ROOT, 'out', 'store-assets');
 
-const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
-// Brand purple — matches icon128.png and the hero screenshot gradient.
-const BG = `linear-gradient(135deg, #8a63f0 0%, #5b3df0 100%)`;
+const FONT = `Roboto, 'Helvetica Neue', -apple-system, 'Segoe UI', Arial, sans-serif`;
+// Brand emerald — matches icon128.png (Material tonal pair + amber accent).
+const BG = `linear-gradient(135deg, #34d399 0%, #059669 100%)`;
 
 function page(width, height, body) {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -39,9 +39,12 @@ function page(width, height, body) {
 
 async function main() {
   const iconB64 = (await readFile(resolve(ROOT, 'extension/icons/icon128.png'))).toString('base64');
+  // The tile shares the marquee's gradient — without the white ring it
+  // melts into the background.
   const icon = (size, radius) =>
     `<img src="data:image/png;base64,${iconB64}" width="${size}" height="${size}"
-          style="border-radius:${radius}px; box-shadow: 0 8px 28px rgba(20,10,60,0.35);">`;
+          style="border-radius:${radius}px;
+                 box-shadow: 0 0 0 4px rgba(255,255,255,0.4), 0 10px 32px rgba(3,40,26,0.45);">`;
 
   const tiles = [
     {

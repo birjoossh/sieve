@@ -1,8 +1,8 @@
-# Sieve — Privacy Policy
+# Negative Filter — Privacy Policy
 
 _Last updated: 2026-06-12_
 
-Sieve is an open-source Chrome extension that hides items on
+Negative Filter is an open-source Chrome extension that hides items on
 the pages you visit. It is designed to keep your data on your device.
 
 ## Data we store on your device
@@ -30,13 +30,19 @@ locally to your browser profile. Specific keys:
 There are two outbound destinations, both initiated by you:
 
 1. **Your chosen LLM provider** (Anthropic or OpenAI) — only when you
-   either (a) click Re-discover, or (b) click ✦ Suggest. The request
-   payload is a structure-only, content-redacted skeleton of the
-   page (`distill()` in `background/llm.ts`) plus, for suggestions,
-   the literal phrases you've already typed. Page text, URLs, ARIA
-   labels, and personal identifiers in the DOM are replaced with `…`
-   before transmission. **No telemetry; no analytics; no data goes
-   to Anthropic / the extension developer.**
+   either (a) click Re-discover, or (b) click ✦ Suggest while an API
+   key is configured. For Re-discover, the payload is a structure-only,
+   content-redacted skeleton of the page (`distill()` in
+   `background/llm.ts`): page text, URLs, ARIA labels, and personal
+   identifiers in the DOM are replaced with `…` before transmission.
+   For suggestions, the payload is the literal phrases you've already
+   typed plus a short list of frequently-recurring words extracted
+   from the repeated items of the list you're filtering (at most a
+   few dozen single words and word pairs — never full card text,
+   never page text outside the detected list). Without an API key,
+   suggestions are computed entirely on-device and nothing is sent.
+   **No telemetry; no analytics; no data goes to Anthropic / the
+   extension developer.**
 
 2. **Detail pages on the site you're filtering** — only when you
    enable Deep Scan for a filter. The extension opens a hidden tab

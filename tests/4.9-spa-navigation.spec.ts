@@ -87,7 +87,7 @@ test.describe('4.9 — session phrases survive in-app navigation', () => {
     await expect(env.panel.locator('.chip')).toHaveCount(0);
     await env.fixture.reload();
     await env.panel.waitForFunction(
-      () => document.querySelector('[data-role="display-mode"]') !== null,
+      () => document.querySelector('[data-role="page-detected"]') !== null,
       undefined,
       { timeout: 5_000 },
     );

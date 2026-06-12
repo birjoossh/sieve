@@ -23,7 +23,7 @@ test.describe('4.6 — MutationObserver re-evaluates added items', () => {
     await env.fixture.goto(`${env.fixtureOrigin}/rolecast-paginated.html`);
     // Wait for the panel to reconcile to the new page.
     await env.panel.waitForFunction(
-      () => document.querySelector('[data-role="display-mode"]') !== null,
+      () => document.querySelector('[data-role="page-detected"]') !== null,
       undefined,
       { timeout: 5_000 },
     );

@@ -205,6 +205,7 @@ function handlePanelMessage(msg: PanelToContent): ContentReply {
         ctx.items.filter((el) => el.isConnected),
         ctx.detailText,
         existing,
+        msg.max,
       );
       return { t: 'suggestions', v: MESSAGE_VERSION, phrases };
     }

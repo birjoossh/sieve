@@ -41,7 +41,7 @@ import { Throttler } from '../../extension/background/throttle.js';
 import { extractDetailFields, isDetailPage } from '../../extension/content/detail.js';
 import { ViewportEnqueuer } from '../../extension/content/viewport-enqueuer.js';
 import { safeCompileRegex, UnsafeRegexError } from '../../extension/shared/safe-regex.js';
-import { buildLocalSchema, discover } from '../../extension/content/discover.js';
+import { buildLocalSchema, detectPriceField, discover } from '../../extension/content/discover.js';
 import { renderPageStatus } from '../../extension/panel/components/page-status.js';
 import { classify, detect, generalize, localizeItemSet } from '../../extension/content/detect.js';
 import {
@@ -68,6 +68,7 @@ export interface TestbedAPI {
   detect: typeof detect;
   localizeItemSet: typeof localizeItemSet;
   buildLocalSchema: typeof buildLocalSchema;
+  detectPriceField: typeof detectPriceField;
   DeepTextScanner: typeof DeepTextScanner;
   fetchDetailText: typeof fetchDetailText;
   itemDetailUrl: typeof itemDetailUrl;
@@ -174,6 +175,7 @@ const api: TestbedAPI = {
   detect,
   localizeItemSet,
   buildLocalSchema,
+  detectPriceField,
   DeepTextScanner,
   fetchDetailText,
   itemDetailUrl,

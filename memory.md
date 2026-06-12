@@ -5,6 +5,48 @@ finding worth saving the next session a re-derivation goes here.
 
 ---
 
+## 2026-06-12 (later) · Feedback round 2: the Carousell numeric bug was a hardcoded field name, not parsing; grid fixtures assert `.ctile` not `.sliver`; "page detected" sentinel is data-role="page-detected"
+
+The real reason "Price > 4000" never worked on Carousell: panel.ts bound
+the numeric editor to a field literally named `comp` (rolecast prototype)
+with a 0–300 "$k" slider — the comma-parse fix (below) was necessary but
+could never be sufficient. No hint can fix a filter the panel never
+renders. Generalized: `numericFieldOf(schema)` = first number-kind field;
+free number input. `detectPriceField()` (discover.ts) synthesizes a local
+`price` field from the consistently currency-formatted innermost element
+(coverage ≥ max(2, half the items) + first-match verification), so numeric
+filtering works with NO LLM key; it also repairs LLM schemas that lack a
+number field. Currency marker REQUIRED — bare numbers ("3 days ago",
+"12 likes") must never become a price.
+
+Spec gotchas worth not re-deriving: grid-classified pages render the
+`.ctile` placeholder, lists render `.sliver`, carousels `.sliver-v` — a
+grid fixture asserting `.sliver` fails with verdicts working perfectly
+(debugged exactly this on tests/4.16). And since the Collapse|Hide toggle
+is gone (bugs.md #3), the "panel knows a schema exists" wait is
+`[data-role="page-detected"]` on the status line (ext-env + 4 specs).
+
+Suggestions (bugs.md #1 round 2): ranking is top-recurring-first within a
+[15%, 90%] doc-frequency band; unigrams beat bigrams on ties and absorb
+overlapping bigrams ("Apple" suppresses "Apple Watch" — the broader filter
+already covers it; "mac mini" still surfaces because "mac" is under the
+4-char unigram floor). LLM curation path sends ONLY these candidate tokens
+(PRIVACY.md updated accordingly) and falls back to the local list on any
+error — tested with an unreachable baseUrl.
+
+Brand state (settled 2026-06-12): product name = **Negative Filter**;
+"sieve" is only the repo + zip artifact name (out/sieve-<v>.zip, pinned
+by the 6.5 spec). Visual identity = funnel-rows mark (3 narrowing list
+rows: white / soft-white / amber) on an emerald tonal gradient
+(#34d399→#059669), Material-style; wordmark "Negative" white + "Filter"
+emerald, Roboto. Source of truth: scripts/icons.mjs (extension icons) +
+scripts/store-tiles.mjs (promo tiles); hero recomposed on the emerald
+gradient. Concept exploration lives in out/store-assets/logo-concepts/.
+Still open: PRIVACY.md's H1 says "Sieve" (user's own edit) — must match
+the listing name before store submission. Panel UI accent is still blue
+(--accent in panel.css); switching it to emerald was offered, not
+confirmed.
+
 ## 2026-06-12 · User bug batch (bugs.md): YouTube 0-items = non-unique itemSetSelector + first-match scoping; 429 backoff over-escalated on concurrent failures
 
 Live probe on youtube.com/watch (bugs.md #6): 20 `yt-lockup-view-model`

@@ -123,7 +123,13 @@ export type PanelMsg =
       layout: LayoutKind;
       hint?: string;
       force?: boolean;
-    };
+    }
+  /** LLM-curated phrase suggestions. `candidates` are the locally-extracted
+   *  recurring tokens from the detected items — the ONLY page content the
+   *  suggestion call may transmit (PRIVACY.md). The SW errs with
+   *  `no-api-key` when settings are absent; the panel then falls back to
+   *  the local candidates as-is. */
+  | { t: 'suggestPhrases'; v: MessageV; existing: string[]; candidates: string[] };
 
 /** Service worker → panel (or reply value to a PanelMsg send). `ack`/`err`
  *  are generic side-effect replies — anything that doesn't return data uses
@@ -132,7 +138,8 @@ export type SwToPanel =
   | { t: 'pong'; v: MessageV }
   | { t: 'ack'; v: MessageV }
   | { t: 'err'; v: MessageV; message: string }
-  | { t: 'schema'; v: MessageV; schema: Schema };
+  | { t: 'schema'; v: MessageV; schema: Schema }
+  | { t: 'suggestions'; v: MessageV; phrases: string[] };
 
 // ---------------------------------------------------------------------------
 // Bus surface B — panel ↔ content (direct, Slice 1)
@@ -146,8 +153,9 @@ export type PanelToContent =
   | { t: 'setItemRestored'; v: MessageV; itemId: string; restored: boolean }
   | { t: 'rediscover'; v: MessageV; hint?: string; force?: boolean }
   /** Local phrase suggestions extracted from the detected items — no LLM,
-   *  no network, so nothing here touches the PRIVACY.md surface. */
-  | { t: 'getSuggestions'; v: MessageV }
+   *  no network, so nothing here touches the PRIVACY.md surface. `max`
+   *  widens the candidate list when the panel intends to LLM-curate it. */
+  | { t: 'getSuggestions'; v: MessageV; max?: number }
   /** SW-relayed SPA route change (tabs.onUpdated fires on pushState; the
    *  content script's own history patch can't cross the isolated-world
    *  boundary — memory.md 2026-06-06). */
@@ -212,6 +220,8 @@ export function isPanelMsg(x: unknown): x is PanelMsg {
         hasStringField(x, 'distilled') &&
         (r['layout'] === 'list' || r['layout'] === 'carousel' || r['layout'] === 'grid')
       );
+    case 'suggestPhrases':
+      return Array.isArray(r['existing']) && Array.isArray(r['candidates']);
     default:
       return false;
   }
@@ -229,6 +239,8 @@ export function isSwToPanel(x: unknown): x is SwToPanel {
       return hasStringField(x, 'message');
     case 'schema':
       return typeof r['schema'] === 'object' && r['schema'] !== null;
+    case 'suggestions':
+      return Array.isArray(r['phrases']);
     default:
       return false;
   }

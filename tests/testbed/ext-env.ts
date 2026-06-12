@@ -164,23 +164,17 @@ export async function enableAndWaitForContent(env: ExtEnv): Promise<void> {
   // inject. We trigger the reload manually (the production UX would tell
   // the user to refresh).
   await env.fixture.reload();
-  // Wait for content's pageDetected push to land in the panel — surfaces
-  // as a non-empty hidden-list section header.
+  // Wait for content's pageDetected push to land in the panel — the status
+  // line carries data-role="page-detected" only when a schema is non-null.
   await env.panel.waitForFunction(
-    () => {
-      const h = document.querySelector('#page-status .section-meta');
-      return (h?.textContent ?? '').includes('list');
-    },
+    () => document.querySelector('[data-role="page-detected"]') !== null,
     undefined,
     { timeout: 5_000 },
   );
   // Make sure the panel is showing the fixture's origin still.
   await env.fixture.bringToFront();
   await env.panel.waitForFunction(
-    () => {
-      // The mode toggle only renders when schema is non-null.
-      return document.querySelector('[data-role="display-mode"]') !== null;
-    },
+    () => document.querySelector('[data-role="page-detected"]') !== null,
     undefined,
     { timeout: 5_000 },
   );

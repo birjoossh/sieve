@@ -1,20 +1,24 @@
-// 1.8 — panel/components/page-status.ts: DISPLAY toggle (collapse | hide)
-// wired to `mode-hide` on the item-set container.
+// 1.8 — display modes after the toggle removal (bugs.md Bug 3 feedback).
 //
-// Gate from tasks.md:
-//   switch to hide → 0 visible `.sliver`; switch back → 5 slivers.
+// The COLLAPSE | HIDE segmented control was removed from the panel: with the
+// polarity control and per-item restore under Filters, users read it as
+// redundant clutter. Default behavior is collapse (sliver bar per hidden
+// item). The renderer still honors `setDisplayMode` over the message bus —
+// this spec pins both halves:
+//   (a) the panel renders NO mode toggle, and
+//   (b) collapse stays the default; the bus path still flips `mode-hide`.
 
 import { test, expect } from '@playwright/test';
 import { setupExtEnv, enableAndWaitForContent, type ExtEnv } from './testbed/ext-env.js';
 
-test.describe('1.8 — DISPLAY mode toggle', () => {
+test.describe('1.8 — display mode (toggle removed, collapse default)', () => {
   let env: ExtEnv;
 
   test.beforeAll(async () => {
     env = await setupExtEnv();
     await enableAndWaitForContent(env);
 
-    // Seed with both phrases → 5 filtered cards (3 mandarin + unpaid + no compensation).
+    // Seed with phrases → 5 filtered cards (3 mandarin + unpaid + no compensation).
     await env.panel.fill('input[data-input="phrase"]', 'mandatory Mandarin');
     await env.panel.click('button.phrase-add');
     await env.panel.fill('input[data-input="phrase"]', 'unpaid');
@@ -28,73 +32,53 @@ test.describe('1.8 — DISPLAY mode toggle', () => {
     await env.teardown();
   });
 
-  test('Hide → 0 visible slivers; Collapse → 5 visible slivers', async () => {
-    // Initial mode = collapse; 5 slivers visible.
+  test('panel renders no mode toggle; collapse is the default', async () => {
+    // The segmented control is gone — no mode buttons anywhere in the panel.
+    await expect(env.panel.locator('.mode-btn')).toHaveCount(0);
+    await expect(env.panel.locator('[data-role="display-mode"]')).toHaveCount(0);
+
+    // Default = collapse: slivers visible, no mode-hide on the item-set.
     const slivers = env.fixture.locator('.sliver');
     await expect(slivers).toHaveCount(5);
     for (let i = 0; i < 5; i++) {
       await expect(slivers.nth(i)).toBeVisible();
     }
-    // Joblist starts WITHOUT mode-hide.
     await expect(env.fixture.locator('.joblist')).not.toHaveClass(/\bmode-hide\b/);
+  });
 
-    // ── Switch to HIDE ────────────────────────────────────────────────────
-    await env.panel.click('.mode-btn[data-mode="hide"]');
+  test('renderer still honors setDisplayMode over the message bus', async () => {
+    // Drive the bus directly from the panel's chrome context — the UI
+    // control is gone but the contract (and the renderer's hide mode)
+    // remains for programmatic use.
+    const sendMode = (mode: 'collapse' | 'hide') =>
+      env.panel.evaluate(async (m) => {
+        const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const tabId = tabs[0]?.id;
+        if (tabId === undefined) throw new Error('no active tab');
+        return chrome.tabs.sendMessage(tabId, { t: 'setDisplayMode', v: 1, mode: m });
+      }, mode);
 
-    // mode-hide gets applied to the item-set container.
+    await env.fixture.bringToFront();
+    await sendMode('hide');
     await expect(env.fixture.locator('.joblist')).toHaveClass(/\bmode-hide\b/);
-    // Slivers still in the DOM but display:none → 0 visible.
+    const slivers = env.fixture.locator('.sliver');
     await expect(slivers).toHaveCount(5);
     for (let i = 0; i < 5; i++) {
       await expect(slivers.nth(i)).toBeHidden();
     }
 
-    // Panel toggle reflects state.
-    await expect(env.panel.locator('.mode-btn[data-mode="hide"]')).toHaveClass(/\bactive\b/);
-    await expect(env.panel.locator('.mode-btn[data-mode="hide"]')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await expect(env.panel.locator('.mode-btn[data-mode="collapse"]')).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
-
-    // Restyle guard: the active side must be visually unambiguous — a
-    // filled background distinct from the inactive side, plus an inset
-    // (pressed) shadow. Computed-style check so a CSS regression that
-    // flattens the two sides fails here rather than in a user report.
-    const styleOf = (sel: string) =>
-      env.panel
-        .locator(sel)
-        .evaluate((el) => {
-          const s = getComputedStyle(el);
-          return { bg: s.backgroundColor, shadow: s.boxShadow };
-        });
-    const activeStyle = await styleOf('.mode-btn[data-mode="hide"]');
-    const inactiveStyle = await styleOf('.mode-btn[data-mode="collapse"]');
-    expect(activeStyle.bg).not.toBe(inactiveStyle.bg);
-    expect(activeStyle.shadow).not.toBe('none');
-    expect(inactiveStyle.shadow).toBe('none');
-
-    // Restored items remain visible even in hide mode — restore card 1 via
-    // its HIDDEN row, then assert its wrapper is still visible (the card).
+    // Restored items remain visible even in hide mode.
     await env.panel.click('.hidden-row[data-item-id="r-001"] .row-toggle');
     const r1 = env.fixture.locator('.filt[data-nf-id="r-001"]');
     await expect(r1).toHaveClass(/\brestored\b/);
-    // The .filt.restored wrapper is `display: revert` in hide mode CSS:
-    // our rule `.mode-hide > .filt:not(.restored) { display: none; }` keeps
-    // restored items visible.
     await expect(r1).toBeVisible();
-    // Re-hide it for the next assertion.
     await env.panel.click('.hidden-row[data-item-id="r-001"] .row-toggle');
 
-    // ── Switch back to COLLAPSE ────────────────────────────────────────────
-    await env.panel.click('.mode-btn[data-mode="collapse"]');
+    // Back to collapse.
+    await sendMode('collapse');
     await expect(env.fixture.locator('.joblist')).not.toHaveClass(/\bmode-hide\b/);
     for (let i = 0; i < 5; i++) {
       await expect(slivers.nth(i)).toBeVisible();
     }
-    await expect(env.panel.locator('.mode-btn[data-mode="collapse"]')).toHaveClass(/\bactive\b/);
   });
 });

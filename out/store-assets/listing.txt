@@ -58,11 +58,13 @@ grids) on sites the user explicitly enables.
 
 --- Data usage disclosures (review form) ---
 • Does NOT collect or transmit user data to the developer. No analytics.
-• "Website content" (a structure-only, content-redacted DOM skeleton) is
-  sent to the user's own chosen LLM provider, only when the user clicks
-  Re-discover or Suggest, using the user's own API key. Declare under
-  "Website content", purpose: app functionality, not sold, not shared
-  with third parties beyond the user-chosen provider.
+• "Website content" is sent to the user's own chosen LLM provider, using
+  the user's own API key, only when the user clicks Re-discover (a
+  structure-only, content-redacted DOM skeleton) or Suggest with a key
+  configured (recurring words extracted from the detected list's items —
+  never full card or page text). Declare under "Website content",
+  purpose: app functionality, not sold, not shared with third parties
+  beyond the user-chosen provider.
 Privacy policy URL: https://github.com/birjoossh/sieve/blob/main/PRIVACY.md
 
 --- Assets ---
@@ -75,7 +77,7 @@ Small promo tile (440x280):  tile-small-440x280.png
 Marquee promo tile (1400x560): marquee-1400x560.png
 
 --- Submission checklist ---
-[ ] npm run package → upload out/negative-filter-<v>.zip
+[ ] npm run package → upload out/sieve-<v>.zip
 [ ] Paste Summary + Description above
 [ ] Category: Productivity > Workflow & Planning
 [ ] Upload 3 screenshots + small tile + marquee

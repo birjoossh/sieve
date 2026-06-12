@@ -500,10 +500,11 @@ export interface SuggestPhrasesOpts {
   /** Existing phrases the user has already typed — feed the LLM so the
    *  suggestions complement rather than duplicate. */
   existing: readonly string[];
-  /** Plain-English description of what the user is trying to exclude
-   *  ("jobs requiring Mandarin language fluency"). Built by the panel
-   *  from the active filter's field + polarity. */
-  intent: string;
+  /** Recurring tokens extracted locally from the detected items
+   *  (content/suggest.ts). The ONLY page content this call may carry —
+   *  never raw card text (PRIVACY.md). The LLM's job is curation:
+   *  pick the candidates that read as filterable topics, not chrome. */
+  candidates: readonly string[];
   model?: string;
   /** Custom base URL — same semantics as `DiscoverOpts.baseUrl`. Without
    *  this, an OpenRouter user with provider=openai would hit api.openai.com
@@ -514,18 +515,18 @@ export interface SuggestPhrasesOpts {
   spend?: SpendChecker;
 }
 
-const SUGGEST_PROMPT_HEADER = `You suggest additional phrases that match the user's exclusion intent.
+const SUGGEST_PROMPT_HEADER = `You curate filter phrases for a browser extension that hides items from a list the user is browsing. The candidates below are the most frequently recurring words and word pairs across the list's items, extracted locally.
 
 Output ONLY a single JSON object with this exact shape:
 { "suggestions": ["phrase one", "phrase two", ...] }
 
-Suggest up to 6 short, distinct phrases. Don't repeat anything in "existing". Each phrase should be a literal substring that would appear in an item's text — not regex, not bullet syntax.`;
+Pick up to 8 candidates that read as meaningful, filterable topics, brands, or categories — drop UI chrome, generic verbs, and fragments. Keep each phrase exactly as written in the candidate list. Order from most to least useful. Don't repeat anything in "existing".`;
 
 function buildSuggestPrompt(opts: SuggestPhrasesOpts): string {
   const existing = opts.existing.length === 0 ? '(none yet)' : opts.existing.join(', ');
   return `${SUGGEST_PROMPT_HEADER}
 
-Intent: ${opts.intent}
+Candidates: ${opts.candidates.join(', ')}
 Existing phrases: ${existing}`;
 }
 

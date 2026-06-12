@@ -16,6 +16,7 @@ import {
   type SwToPanel,
 } from '../shared/types.js';
 import { chromeStorageSchemaCache, getOrDiscover } from './cache.js';
+import { suggestPhrases } from './llm.js';
 import { loadLlmSettings } from '../shared/settings.js';
 import { chromeStorageSpendChecker } from './spend.js';
 
@@ -27,7 +28,7 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch(() => undefined);
 
-void chrome.action.setBadgeBackgroundColor({ color: '#4f46e5' }).catch(() => undefined);
+void chrome.action.setBadgeBackgroundColor({ color: '#059669' }).catch(() => undefined);
 
 // SPA route changes (history.pushState in the page realm) never reach the
 // content script's own history patch — MV3 isolated worlds don't share the
@@ -123,6 +124,34 @@ async function handle(msg: PanelMsg): Promise<SwToPanel> {
           },
         });
         return { t: 'schema', v: MESSAGE_VERSION, schema };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { t: 'err', v: MESSAGE_VERSION, message };
+      }
+    }
+    case 'suggestPhrases': {
+      // LLM curation of the locally-extracted candidates (bugs.md #1
+      // feedback). Same key + spend-cap contract as discoverSchema; the
+      // panel falls back to the raw local candidates on any err.
+      const settings = await loadLlmSettings();
+      if (!settings || settings.apiKey.trim() === '') {
+        return {
+          t: 'err',
+          v: MESSAGE_VERSION,
+          message: 'no-api-key: add a provider key in the panel under "LLM provider".',
+        };
+      }
+      try {
+        const phrases = await suggestPhrases({
+          provider: settings.provider,
+          apiKey: settings.apiKey,
+          existing: msg.existing,
+          candidates: msg.candidates,
+          ...(settings.model !== undefined ? { model: settings.model } : {}),
+          ...(settings.baseUrl !== undefined ? { baseUrl: settings.baseUrl } : {}),
+          spend: chromeStorageSpendChecker(),
+        });
+        return { t: 'suggestions', v: MESSAGE_VERSION, phrases };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return { t: 'err', v: MESSAGE_VERSION, message };

@@ -153,15 +153,13 @@ test.describe('3.4 — panel LLM settings (BYO key + provider)', () => {
       await env.panel.click('button.phrase-add');
       await expect(env.fixture.locator('.sliver')).toHaveCount(3);
 
-      // 2) Toggle display mode (panel → content setDisplayMode).
-      await env.panel.click('[data-mode="hide"]');
-      await env.panel.click('[data-mode="collapse"]');
-
-      // 3) Restore an item then re-hide it (panel → content setItemRestored).
+      // 2) Restore an item then re-hide it (panel → content setItemRestored).
+      //    (The display-mode toggle was removed from the panel — bugs.md #3 —
+      //    so setDisplayMode no longer originates here.)
       await env.fixture.locator('.sliver').first().click();
       await env.fixture.locator('.rehide').first().click();
 
-      // 4) Disable the domain (panel → SW disableDomain).
+      // 3) Disable the domain (panel → SW disableDomain).
       await env.panel.click('button[data-action="enable-site"]'); // currently labeled "Disable …"
 
       // Drain — give Chrome's async dispatch a tick to surface.

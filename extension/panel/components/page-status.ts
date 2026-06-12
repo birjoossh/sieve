@@ -1,10 +1,12 @@
-// panel/components/page-status.ts — what we detected + display-mode toggle
-// + (Slice 3.5) re-discover button + NL hint input.
+// panel/components/page-status.ts — what we detected + (Slice 3.5)
+// re-discover button + NL hint input.
 //
-// Slice 1: shows "detected: layout / N items" when a schema matched, and a
-// COLLAPSE | HIDE segmented toggle wired to the renderer's `.mode-hide`
-// class on the item-set container. Toggling here is what the 1.8 gate
-// asserts.
+// Slice 1: shows "detected: layout / N items" when a schema matched. The
+// COLLAPSE | HIDE display-mode toggle that used to live here was removed on
+// user feedback (bugs.md Bug 3): with the polarity control + per-item
+// restore under Filters, the extra segmented control read as clutter.
+// Filtered items always collapse to the sliver bar; the renderer still
+// supports `setDisplayMode` over the message bus.
 //
 // Slice 3.5: a "Re-discover" button + an inline hint input. Clicking
 // invokes `onRediscover({ hint, force: true })` so the orchestrator
@@ -14,7 +16,7 @@
 // exactly the pages that need it (content handles `rediscover` without a
 // ctx by re-running discovery from scratch).
 
-import type { DisplayMode, Schema } from '../../shared/types.js';
+import type { Schema } from '../../shared/types.js';
 
 export interface RediscoverPayload {
   hint?: string;
@@ -24,10 +26,8 @@ export interface RediscoverPayload {
 export interface PageStatusState {
   schema: Schema | null;
   itemCount: number;
-  mode: DisplayMode;
-  onModeChange: (mode: DisplayMode) => void;
   /** Optional: when wired, a "Re-discover" button + hint input render
-   *  beneath the mode toggle. Click → onRediscover({ hint, force: true }). */
+   *  beneath the status line. Click → onRediscover({ hint, force: true }). */
   onRediscover?: (payload: RediscoverPayload) => void;
 }
 
@@ -41,44 +41,15 @@ export function renderPageStatus(host: HTMLElement, state: PageStatusState): voi
 
   const status = document.createElement('p');
   status.className = 'section-meta';
+  // Schema-gated sentinel: specs (and any future panel code) key "the page
+  // is detected" off this role now that the mode toggle no longer exists.
+  status.dataset['role'] = state.schema ? 'page-detected' : 'page-empty';
   if (state.schema) {
     status.textContent = `Detected: ${state.schema.layout} · ${state.itemCount} item${state.itemCount === 1 ? '' : 's'}`;
   } else {
     status.textContent = 'No list detected yet.';
   }
   host.appendChild(status);
-
-  if (state.schema) {
-    const modeRow = document.createElement('div');
-    modeRow.className = 'mode-row';
-
-    const modeLabel = document.createElement('span');
-    modeLabel.className = 'mode-row-label';
-    modeLabel.id = 'display-mode-label';
-    modeLabel.textContent = 'Hidden items';
-    modeRow.appendChild(modeLabel);
-
-    const toggle = document.createElement('div');
-    toggle.className = 'mode-toggle';
-    toggle.dataset['role'] = 'display-mode';
-    toggle.setAttribute('role', 'group');
-    toggle.setAttribute('aria-label', 'Display mode');
-
-    for (const m of ['collapse', 'hide'] as const) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'mode-btn';
-      btn.dataset['mode'] = m;
-      btn.textContent = m === 'collapse' ? 'Collapse' : 'Hide';
-      btn.setAttribute('aria-pressed', String(state.mode === m));
-      if (state.mode === m) btn.classList.add('active');
-      btn.onclick = () => state.onModeChange(m);
-      toggle.appendChild(btn);
-    }
-
-    modeRow.appendChild(toggle);
-    host.appendChild(modeRow);
-  }
 
   if (state.onRediscover) {
     const rediscoverHandler = state.onRediscover;

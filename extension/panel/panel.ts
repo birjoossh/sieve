@@ -66,7 +66,18 @@ import {
 
 const SLICE1_FILTER_ID = 'panel-phrase-filter';
 const NUMERIC_FILTER_ID = 'panel-numeric-filter';
-const NUMERIC_FIELD = 'comp';
+
+/** First number-kind field on the schema — the numeric editor binds to it.
+ *  Was hardcoded to `comp` (the rolecast stub's only number field), which
+ *  left the numeric filter dark on every real marketplace page whose
+ *  LLM-discovered or locally-detected field is `price` (bugs.md #2). */
+function numericFieldOf(schema: Schema | null): string | null {
+  if (!schema) return null;
+  for (const [name, spec] of Object.entries(schema.fields)) {
+    if (spec.kind === 'number') return name;
+  }
+  return null;
+}
 
 const NUMERIC_DEFAULT: NumericFilterValue = {
   enabled: false,
@@ -179,12 +190,13 @@ function buildFilters(
   }
   // The numeric filter is omitted entirely when disabled — the engine
   // only sees what's currently active. (Per 4.3, multiple filters AND.)
-  if (numeric.enabled && schema.fields[NUMERIC_FIELD]) {
+  const numericField = numericFieldOf(schema);
+  if (numeric.enabled && numericField !== null) {
     out.push({
       id: NUMERIC_FILTER_ID,
       fingerprint: schema.fingerprint,
       polarity: 'exclude',
-      field: NUMERIC_FIELD,
+      field: numericField,
       predicate:
         numeric.op === 'lessThan'
           ? { op: 'lessThan', value: numeric.value }
@@ -227,24 +239,6 @@ async function pushNumeric(next: NumericFilterValue): Promise<void> {
 async function pushPolarity(next: PhrasePolarity): Promise<void> {
   state.polarity = next;
   await pushFilters();
-  render();
-}
-
-async function pushMode(mode: DisplayMode): Promise<void> {
-  state.mode = mode;
-  if (state.activeTabId === null) {
-    render();
-    return;
-  }
-  try {
-    await sendToContent(state.activeTabId, {
-      t: 'setDisplayMode',
-      v: MESSAGE_VERSION,
-      mode,
-    });
-  } catch (err) {
-    console.error('[sieve] setDisplayMode failed:', err);
-  }
   render();
 }
 
@@ -447,16 +441,24 @@ async function refresh(): Promise<void> {
   render();
 }
 
+/** Suggestions shown to the user at once. */
+const SUGGEST_DISPLAY_MAX = 8;
+/** Wider candidate pull for LLM curation — the provider picks the best 8. */
+const SUGGEST_LLM_CANDIDATES = 24;
+
 async function handleSuggest(): Promise<void> {
   if (state.suggesting) return;
-  // Suggestions are extracted locally from the detected items by the content
-  // script (content/suggest.ts) — no LLM, no key, no network. The only
-  // precondition is a detected list on the active tab.
+  // Candidates are extracted locally from the detected items by the content
+  // script (content/suggest.ts) — top recurring tokens, no network. With an
+  // LLM key configured we additionally send THOSE CANDIDATES (never raw page
+  // text — PRIVACY.md) to the provider for curation; any failure falls back
+  // to the local list so the button always works.
   if (state.activeTabId === null || state.schema === null) {
     state.suggestError = 'Suggestions need a detected list on this page.';
     render();
     return;
   }
+  const hasKey = state.llmSettings !== null && state.llmSettings.apiKey.trim() !== '';
   state.suggesting = true;
   state.suggestError = null;
   render();
@@ -464,9 +466,28 @@ async function handleSuggest(): Promise<void> {
     const reply = await sendToContent(state.activeTabId, {
       t: 'getSuggestions',
       v: MESSAGE_VERSION,
+      max: hasKey ? SUGGEST_LLM_CANDIDATES : SUGGEST_DISPLAY_MAX,
     });
     if (reply.t === 'suggestions') {
-      state.suggestions = reply.phrases;
+      let phrases = reply.phrases;
+      if (hasKey && phrases.length > 0) {
+        try {
+          const curated = await sendToSw({
+            t: 'suggestPhrases',
+            v: MESSAGE_VERSION,
+            existing: state.phrases,
+            candidates: phrases,
+          });
+          if (curated.t === 'suggestions' && curated.phrases.length > 0) {
+            phrases = curated.phrases;
+          } else if (curated.t === 'err') {
+            console.warn('[sieve] LLM suggestion curation failed:', curated.message);
+          }
+        } catch (err) {
+          console.warn('[sieve] LLM suggestion curation failed:', err);
+        }
+      }
+      state.suggestions = phrases.slice(0, SUGGEST_DISPLAY_MAX);
     } else if (reply.t === 'err') {
       state.suggestError = 'Suggestions need a detected list on this page.';
     }
@@ -680,8 +701,6 @@ function render(): void {
     renderPageStatus(pageHost, {
       schema: state.schema,
       itemCount: state.items.length,
-      mode: state.mode,
-      onModeChange: (m) => void pushMode(m),
       // Slice 3.5 + production wire-up: send rediscover to content,
       // which runs detect/distill/fetchSchema via SW and emits the
       // resulting pageDetected (or discoverError) push.
@@ -755,17 +774,11 @@ function render(): void {
 
   const numericHost = document.getElementById('numeric-filter');
   if (numericHost) {
+    const numericField = numericFieldOf(state.schema);
     renderNumericFilter(numericHost, {
-      enabled:
-        state.enabled &&
-        state.schema !== null &&
-        state.schema.fields[NUMERIC_FIELD] !== undefined,
+      enabled: state.enabled && numericField !== null,
       current: state.numeric,
-      label: humanizeFieldName(NUMERIC_FIELD),
-      format: (n) => `$${n}k`,
-      min: 0,
-      max: 300,
-      step: 10,
+      label: humanizeFieldName(numericField ?? 'value'),
       onChange: (next) => void pushNumeric(next),
     });
   }

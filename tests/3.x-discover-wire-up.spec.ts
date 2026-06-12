@@ -83,10 +83,10 @@ test.describe('Slice-3 wire-up — content auto-discovers via SW round-trip', ()
     // schema cache.
     await env.fixture.reload();
 
-    // pageDetected should fire — wait for the panel's display-mode
-    // toggle to render (which only mounts when schema !== null).
+    // pageDetected should fire — wait for the panel's detected-status
+    // line to render (which only carries this role when schema !== null).
     await env.panel.waitForFunction(
-      () => document.querySelector('[data-role="display-mode"]') !== null,
+      () => document.querySelector('[data-role="page-detected"]') !== null,
       undefined,
       { timeout: 10_000 },
     );

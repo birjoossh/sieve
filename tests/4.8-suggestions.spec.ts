@@ -1,10 +1,11 @@
 // 4.8 — LLM phrasing-suggestion engine (suggestPhrases in background/llm.ts).
 //
 // Engine-layer only: suggestPhrases parses the provider response (deduped vs
-// existing phrases) through a mock fetcher. The panel's ✦ button no longer
-// calls this — it sources suggestions locally from the page's detected items
-// (user bug #1); that UI flow is covered by 4.15-local-suggestions.spec.ts.
-// suggestPhrases stays for future features, so its unit coverage stays here.
+// existing phrases) through a mock fetcher. The panel's ✦ button sources
+// candidates locally from the page's detected items (user bug #1, covered by
+// 4.15-local-suggestions.spec.ts) and — when a key is configured — sends
+// those candidates here for curation (bugs.md #1 feedback). Only the
+// candidate tokens travel, never raw page text (PRIVACY.md).
 
 import { test, expect, chromium } from '@playwright/test';
 import { dirname, resolve } from 'node:path';
@@ -45,7 +46,7 @@ test.describe('4.8 — phrase suggestions (engine layer)', () => {
           provider: 'anthropic',
           apiKey: 'sk-test',
           existing: ['Mandarin'],
-          intent: 'phrases to add to a negative filter',
+          candidates: ['Mandarin', 'unpaid', 'volunteer', 'Save'],
           fetcher,
         });
       });
@@ -77,7 +78,7 @@ test.describe('4.8 — phrase suggestions (engine layer)', () => {
             provider: 'anthropic',
             apiKey: 'sk-test',
             existing: [],
-            intent: 'x',
+            candidates: ['x'],
             fetcher,
           });
           return null;

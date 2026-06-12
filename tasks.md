@@ -70,6 +70,35 @@ out/store-assets/.
 NEXT (open): walk the checklist at out/store-assets/listing.txt —
 upload zip + assets + copy to the Web Store dashboard (manual, needs
 the developer account).
+2026-06-12 (bugs.md feedback round 2): all three open user feedbacks
+closed. (1) Suggestions rank top-recurring-first ([15%,90%] band,
+bigram-redundancy drop); with an LLM key the local candidates are sent
+for curation w/ silent local fallback — PRIVACY.md + listing disclosure
+updated. (2) Carousell price: panel numeric filter was HARDCODED to
+field 'comp' + 0–300 $k slider; now binds to any number-kind field,
+free number input, and detectPriceField() synthesizes a local `price`
+field from the consistently currency-formatted element (works with no
+key; also repairs LLM schemas lacking a number field). New fixture
+carousell-grid.html + tests/4.16. (3) Collapse|Hide toggle removed;
+collapse is the default; setDisplayMode bus path retained; specs key
+"detected" off data-role="page-detected" now. Packaging artifact
+renamed negative-filter-<v>.zip → sieve-<v>.zip (aligns with remote
+6.5 spec + Sieve rebrand signals). Suite: 155 passed / 1 skipped
+(4.10 live LinkedIn). Repackaged out/sieve-0.1.0.zip.
+NEXT (open): full Sieve rebrand decision (manifest/README/listing/
+tiles still say "Negative Filter"; PRIVACY.md + zip + repo say Sieve)
+— then Web Store submission.
+2026-06-12 (brand finalized): product name = Negative Filter; new
+visual identity adopted — funnel-rows mark on emerald tonal gradient
+(#34d399→#059669), amber accent, Material-style Roboto wordmark
+("Negative" white + "Filter" emerald). Extension icons regenerated
+(scripts/icons.mjs), promo tiles + 1280x800 hero recomposed in
+emerald (scripts/store-tiles.mjs; hero from a fresh live panel
+screenshot), zip repackaged, 6.5 green. Exploration kept in
+out/store-assets/logo-concepts/.
+NEXT (open): fix PRIVACY.md H1 ("Sieve" → "Negative Filter") to match
+the listing; optionally re-accent panel.css to emerald; then Web Store
+submission via the listing.txt checklist.
 ```
 
 (Update the line above after every completed task to point at the next one.)

@@ -214,8 +214,6 @@ test.describe('3.5 — re-discover + hint', () => {
             discoveredAt: 0,
           },
           itemCount: 10,
-          mode: 'collapse',
-          onModeChange: () => undefined,
           onRediscover: (payload) => captured.push(payload),
         });
 
@@ -268,8 +266,6 @@ test.describe('3.5 — re-discover + hint', () => {
         nf.renderPageStatus(host, {
           schema: null,
           itemCount: 0,
-          mode: 'collapse',
-          onModeChange: () => undefined,
           onRediscover: (payload) => captured.push(payload),
         });
 
@@ -283,13 +279,13 @@ test.describe('3.5 — re-discover + hint', () => {
         return {
           captured,
           statusText: host.querySelector('.section-meta')?.textContent ?? '',
-          // The display-mode toggle still needs a schema — only the
+          // The detected-status role still needs a schema — only the
           // rediscover block is unconditional.
-          hasModeToggle: host.querySelector('[data-role="display-mode"]') !== null,
+          hasDetectedStatus: host.querySelector('[data-role="page-detected"]') !== null,
         };
       });
 
-      expect(result.hasModeToggle).toBe(false);
+      expect(result.hasDetectedStatus).toBe(false);
       expect(result.statusText).toContain('No list detected');
       expect(result.captured).toEqual([
         { force: true, hint: 'job cards in the main column' },

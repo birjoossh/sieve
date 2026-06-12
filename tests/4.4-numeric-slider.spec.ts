@@ -1,13 +1,19 @@
-// 4.4 — Panel: structured value editor (slider + units) for numeric predicates.
+// 4.4 — Panel: structured value editor for numeric predicates.
 //
-// Gate from tasks.md:
-//   "drag the slider → filter re-evaluates with new value."
+// Gate from tasks.md (updated alongside bugs.md Bug 2):
+//   "change the threshold → filter re-evaluates with new value."
+//
+// The editor was a fixed 0–300 "$k" slider sized for rolecast's comp
+// field; real prices don't fit a fixed range, so the threshold is a free
+// number input now (same data-input hooks). The numeric field itself is
+// no longer hardcoded to `comp` — the panel binds to the schema's first
+// number-kind field, which on the rolecast stub is still comp.
 //
 // Full-stack: real extension, fixture over http, panel drives content.
-// We enable the numeric filter, drag the slider to two thresholds, and
-// assert that the in-page sliver count tracks the value. The engine
-// reads the comp field (Slice 4.1 numeric arm, lower-bound semantics via
-// parseFirstNumber: "$180k–$220k" → 180).
+// We enable the numeric filter, set two thresholds, and assert that the
+// in-page sliver count tracks the value. The engine reads the comp field
+// (Slice 4.1 numeric arm, lower-bound semantics via parseFirstNumber:
+// "$180k–$220k" → 180).
 //
 // rolecast.html comp lower bounds (engine inputs):
 //   r-001 180  r-002 160  r-003 130  r-004 200  r-005 210
@@ -20,7 +26,7 @@
 import { test, expect } from '@playwright/test';
 import { setupExtEnv, enableAndWaitForContent, type ExtEnv } from './testbed/ext-env.js';
 
-test.describe('4.4 — numeric slider editor', () => {
+test.describe('4.4 — numeric threshold editor', () => {
   let env: ExtEnv;
 
   test.beforeAll(async () => {
@@ -32,25 +38,24 @@ test.describe('4.4 — numeric slider editor', () => {
     await env.teardown();
   });
 
-  test('toggle on → drag slider → engine re-evaluates per slider value', async () => {
-    // Editor renders; numeric filter disabled by default → 0 slivers.
+  test('toggle on → change threshold → engine re-evaluates per value', async () => {
+    // Editor renders bound to the stub's comp field; numeric filter
+    // disabled by default → 0 slivers.
     await expect(env.panel.locator('input[data-input="numeric-enabled"]')).toHaveCount(1);
+    await expect(env.panel.locator('#numeric-filter')).toContainText('Filter by Comp');
     await expect(env.fixture.locator('.sliver')).toHaveCount(0);
 
-    // Set the slider to 150 BEFORE enabling — the slider widget is in
-    // the DOM and `fill` works on a disabled-but-not-disabled-attr range
-    // input. We then flip the enable checkbox to push the filter.
+    // Set the threshold BEFORE enabling, then flip the enable checkbox
+    // to push the filter.
     await env.panel.locator('input[data-input="numeric-value"]').fill('150');
     await env.panel.locator('input[data-input="numeric-enabled"]').check();
 
     // Op defaults to lessThan → 3 cards under 150k get filtered.
-    await expect(env.panel.locator('[data-role="numeric-readout"]')).toHaveText('$150k');
     await expect(env.fixture.locator('.sliver')).toHaveCount(3);
 
-    // Drag the slider higher → more cards drop out. fill() on a
-    // type=range fires 'input', which is what our editor listens for.
+    // Raise the threshold → more cards drop out. fill() fires 'input',
+    // which is what the editor listens for.
     await env.panel.locator('input[data-input="numeric-value"]').fill('200');
-    await expect(env.panel.locator('[data-role="numeric-readout"]')).toHaveText('$200k');
     await expect(env.fixture.locator('.sliver')).toHaveCount(7);
 
     // Flip the op to greaterThan at the same value → inverts the

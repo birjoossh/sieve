@@ -18,7 +18,8 @@
 import { classify, detect, localizeItemSet } from './detect.js';
 import { fingerprintItemSet } from './fingerprint.js';
 import { distill } from '../background/llm.js';
-import type { LayoutKind, Schema } from '../shared/types.js';
+import { isVolatileClass } from './stable-classes.js';
+import type { FieldKind, LayoutKind, Schema } from '../shared/types.js';
 
 /** Count an itemSelector's matches without throwing on a malformed string. */
 function countMatches(doc: Document, selector: string): number {
@@ -29,11 +30,103 @@ function countMatches(doc: Document, selector: string): number {
   }
 }
 
-/** Build a schema from local detection alone — no LLM. Fields are empty,
- *  which is all the free-text phrase filter (ALL_TEXT_FIELD) needs; numeric /
- *  named-field filters still require an LLM schema. Used both as the fallback
- *  when the LLM call fails or no key is set, and as the selector source when
- *  the LLM under-matches (returns a 1-card selector on a 25-card list). */
+// --- Local price-field detection (user bug #2: Carousell "Price > 4000") ---
+//
+// Marketplace / listing pages put the price in a consistently-shaped element
+// on every card ("HK$2,000", "$1,234.50", "€99"). Finding that element locally
+// gives the numeric filter a real field WITHOUT an LLM call — the least
+// invasive path to "Price > 4000" working out of the box. The engine's
+// parseFirstNumber already reads comma-grouped currency strings.
+
+/** Currency-marked amount: a recognizable currency token directly followed by
+ *  a number. Deliberately requires the marker — a bare number ("3 days ago",
+ *  "12 comments") must never be mistaken for a price. */
+const CURRENCY_AMOUNT_RE =
+  /(?:[A-Z]{0,3}\$|€|£|¥|₩|₹|USD|HKD|SGD|EUR|GBP|RMB?|CNY|JPY)\s*\d[\d,]*(?:\.\d+)?/;
+
+/** Max descendants scanned per item — keeps the sweep cheap on huge cards. */
+const PRICE_SCAN_CAP = 250;
+
+function stableSelectorFor(el: Element): string | null {
+  const classes = Array.from(el.classList).filter((c) => !isVolatileClass(c));
+  if (classes.length === 0) return null;
+  return `${el.tagName.toLowerCase()}.${classes.map((c) => CSS.escape(c)).join('.')}`;
+}
+
+/** Find a per-item selector whose element consistently carries a
+ *  currency-formatted amount across the detected items. Returns null when no
+ *  shape covers at least half the items (min 2) — a page without consistent
+ *  prices gets no phantom number field. */
+export function detectPriceField(
+  itemSet: Element,
+  itemSelector: string,
+): { kind: FieldKind; selector: string } | null {
+  let items: Element[];
+  try {
+    items = Array.from(itemSet.querySelectorAll(itemSelector)).filter(
+      (el) => el.querySelector(itemSelector) === null,
+    );
+  } catch {
+    return null;
+  }
+  if (items.length < 2) return null;
+
+  // Innermost currency-bearing descendants, grouped by their stable selector.
+  const coverage = new Map<string, number>();
+  for (const item of items) {
+    const seen = new Set<string>();
+    const descendants = item.querySelectorAll('*');
+    const cap = Math.min(descendants.length, PRICE_SCAN_CAP);
+    for (let i = 0; i < cap; i++) {
+      const el = descendants[i]!;
+      const text = el.textContent ?? '';
+      if (!CURRENCY_AMOUNT_RE.test(text)) continue;
+      // Innermost only: an ancestor whose child also matches is a container.
+      let childMatches = false;
+      for (const child of el.children) {
+        if (CURRENCY_AMOUNT_RE.test(child.textContent ?? '')) {
+          childMatches = true;
+          break;
+        }
+      }
+      if (childMatches) continue;
+      const sel = stableSelectorFor(el);
+      if (sel) seen.add(sel);
+    }
+    for (const sel of seen) coverage.set(sel, (coverage.get(sel) ?? 0) + 1);
+  }
+
+  const required = Math.max(2, Math.ceil(items.length / 2));
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [sel, count] of coverage) {
+    if (count > bestCount) {
+      best = sel;
+      bestCount = count;
+    }
+  }
+  if (best === null || bestCount < required) return null;
+
+  // The engine reads the FIRST selector match per item — verify that first
+  // match actually carries the amount on most covered items (a same-shaped
+  // non-price sibling appearing first would silently misread every card).
+  let firstMatchHits = 0;
+  for (const item of items) {
+    const el = item.querySelector(best);
+    if (el && CURRENCY_AMOUNT_RE.test(el.textContent ?? '')) firstMatchHits++;
+  }
+  if (firstMatchHits < required) return null;
+
+  return { kind: 'number', selector: best };
+}
+
+/** Build a schema from local detection alone — no LLM. Named text fields
+ *  still require an LLM schema, but the free-text phrase filter
+ *  (ALL_TEXT_FIELD) needs no fields at all, and a currency-bearing `price`
+ *  field is detected locally so numeric filtering works without a key. Used
+ *  both as the fallback when the LLM call fails or no key is set, and as the
+ *  selector source when the LLM under-matches (returns a 1-card selector on
+ *  a 25-card list). */
 export function buildLocalSchema(doc: Document): DiscoverResult | null {
   const itemSet = detect(doc);
   if (!itemSet) return null;
@@ -50,6 +143,8 @@ export function buildLocalSchema(doc: Document): DiscoverResult | null {
     source: 'local',
     discoveredAt: Date.now(),
   };
+  const price = detectPriceField(itemSet, local.itemSelector);
+  if (price) schema.fields['price'] = price;
   return { schema, itemSet };
 }
 
@@ -114,6 +209,16 @@ export async function discover(
   if (local && local.count > countMatches(doc, schema.itemSelector)) {
     schema.itemSetSelector = local.itemSetSelector;
     schema.itemSelector = local.itemSelector;
+  }
+
+  // Field repair: when the LLM didn't surface any numeric field but the
+  // cards visibly carry a price, the local currency detector fills the gap —
+  // otherwise the panel's numeric filter stays dark on exactly the
+  // marketplace pages it was asked for (Carousell, bugs.md #2).
+  const hasNumberField = Object.values(schema.fields).some((f) => f.kind === 'number');
+  if (!hasNumberField) {
+    const price = detectPriceField(itemSet, schema.itemSelector);
+    if (price) schema.fields['price'] = price;
   }
 
   return { schema, itemSet };

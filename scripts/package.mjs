@@ -24,7 +24,7 @@ async function main() {
   if (!version) throw new Error('manifest.json has no version');
   const outDir = resolve(ROOT, 'out');
   await mkdir(outDir, { recursive: true });
-  const outZip = resolve(outDir, `negative-filter-${version}.zip`);
+  const outZip = resolve(outDir, `sieve-${version}.zip`);
   // zip updates archives in place — a leftover zip would keep entries that
   // are now excluded. Always start fresh.
   await rm(outZip, { force: true });

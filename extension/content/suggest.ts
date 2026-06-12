@@ -1,16 +1,20 @@
 // content/suggest.ts — local, zero-network phrase suggestions derived from the
-// detected items themselves. Replaces the LLM as the panel's suggestion source
-// (user bug #1: suggestions must come from the current page). Pure function:
-// no DOM mutation, no chrome.*, so it's unit-testable through the testbed and
-// adds nothing to the privacy surface — no payload ever leaves the browser.
+// detected items themselves (user bug #1: suggestions must come from the
+// current page). Pure function: no DOM mutation, no chrome.*, so it's
+// unit-testable through the testbed. When an LLM key is configured the panel
+// sends THESE candidates to the provider for curation (sw.ts `suggestPhrases`)
+// — so this list is both the no-key suggestion source and the only page
+// content that ever reaches the LLM for suggestions (see PRIVACY.md).
 
-// Scoring is discriminative document frequency: a phrase is interesting when
-// it appears on SOME cards but not all of them. A token present on (nearly)
-// every card is layout chrome ("Save", "Apply", the site name), not content —
-// hence the 60% ceiling. A token on a single card can't separate anything —
-// hence the floor of 2.
+// Scoring is top-recurring-tokens (user feedback on the first cut: a
+// discriminative 60% ceiling surfaced rare docCount-2 noise and read as
+// random). A phrase is interesting when it recurs across cards — the MORE
+// cards it appears on, the better — EXCEPT near-universal tokens, which are
+// layout chrome ("Save", "Apply", the site name), not content. Hence a 90%
+// ceiling and a floor that scales with the list (≥15% of cards, minimum 2).
 const MIN_ITEMS = 2;
-const MAX_ITEM_FRACTION = 0.6;
+const MAX_ITEM_FRACTION = 0.9;
+const MIN_ITEM_FRACTION = 0.15;
 const MIN_UNIGRAM_LEN = 4;
 const MIN_BIGRAM_WORD_LEN = 3;
 
@@ -27,6 +31,8 @@ const STOPWORDS = new Set([
 interface CandidateStats {
   /** Distinct items containing the candidate. */
   docCount: number;
+  /** Total occurrences across all items — tie-breaker after docCount. */
+  totalCount: number;
   /** Original-casing forms seen, with occurrence counts. Insertion order is
    *  first-seen, which breaks ties deterministically. */
   forms: Map<string, number>;
@@ -45,7 +51,12 @@ function isLettersOnly(word: string): boolean {
  *  `detailText` is the deep-text map (fetched descriptions) when available;
  *  `existing` phrases are excluded case-insensitively. Returns at most `max`
  *  phrases in their most common original casing, deterministically ordered:
- *  document-frequency desc, bigrams before unigrams, then alphabetical. */
+ *  document-frequency desc (top recurring first), unigrams before bigrams,
+ *  total occurrences desc, then alphabetical. A bigram sharing a word with
+ *  an already-selected unigram is dropped — filtering "Apple" covers
+ *  "Apple Watch", so listing both wastes a slot. Bigrams still surface when
+ *  their components aren't valid unigrams ("mac mini": "mac" is below the
+ *  length floor). */
 export function suggestFromItems(
   items: readonly Element[],
   detailText: ReadonlyMap<Element, string> | undefined,
@@ -59,13 +70,14 @@ export function suggestFromItems(
   const record = (key: string, form: string, isBigram: boolean, seenThisItem: Set<string>): void => {
     let s = stats.get(key);
     if (!s) {
-      s = { docCount: 0, forms: new Map(), isBigram };
+      s = { docCount: 0, totalCount: 0, forms: new Map(), isBigram };
       stats.set(key, s);
     }
     if (!seenThisItem.has(key)) {
       seenThisItem.add(key);
       s.docCount += 1;
     }
+    s.totalCount += 1;
     s.forms.set(form, (s.forms.get(form) ?? 0) + 1);
   };
 
@@ -107,16 +119,31 @@ export function suggestFromItems(
   }
 
   const ceiling = Math.floor(items.length * MAX_ITEM_FRACTION);
+  const floor = Math.max(MIN_ITEMS, Math.ceil(items.length * MIN_ITEM_FRACTION));
   const kept = [...stats.entries()].filter(
-    ([, s]) => s.docCount >= MIN_ITEMS && s.docCount <= ceiling,
+    ([, s]) => s.docCount >= floor && s.docCount <= ceiling,
   );
   kept.sort(([ka, a], [kb, b]) => {
     if (a.docCount !== b.docCount) return b.docCount - a.docCount;
-    if (a.isBigram !== b.isBigram) return a.isBigram ? -1 : 1;
+    if (a.isBigram !== b.isBigram) return a.isBigram ? 1 : -1;
+    if (a.totalCount !== b.totalCount) return b.totalCount - a.totalCount;
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 
-  return kept.slice(0, max).map(([, s]) => {
+  // Greedy pick: a bigram overlapping an already-selected unigram is
+  // redundant as a filter (the unigram matches a superset of its items —
+  // bigram docCount ≤ each component's), so it never spends a slot.
+  const selectedUnigrams = new Set<string>();
+  const selected: Array<[string, CandidateStats]> = [];
+  for (const entry of kept) {
+    if (selected.length >= max) break;
+    const [key, s] = entry;
+    if (s.isBigram && key.split(' ').some((w) => selectedUnigrams.has(w))) continue;
+    if (!s.isBigram) selectedUnigrams.add(key);
+    selected.push(entry);
+  }
+
+  return selected.map(([, s]) => {
     let bestForm = '';
     let bestCount = -1;
     for (const [form, count] of s.forms) {
