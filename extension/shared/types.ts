@@ -189,7 +189,11 @@ export type ContentToPanel =
       count: number;
       fingerprint: string;
     }
-  | { t: 'discoverError'; v: MessageV; message: string };
+  | { t: 'discoverError'; v: MessageV; message: string }
+  /** One filter was rejected by the engine (unsafe/invalid regex). The
+   *  rest of the filter set keeps evaluating; the panel surfaces which
+   *  filter sat out and why. */
+  | { t: 'filterError'; v: MessageV; filterId: string; message: string };
 
 // ---------------------------------------------------------------------------
 // Type guards — receivers must validate at the boundary, since chrome.runtime
@@ -298,6 +302,8 @@ export function isContentToPanel(x: unknown): x is ContentToPanel {
       return hasStringField(x, 'fingerprint') && typeof r['count'] === 'number';
     case 'discoverError':
       return hasStringField(x, 'message');
+    case 'filterError':
+      return hasStringField(x, 'filterId') && hasStringField(x, 'message');
     default:
       return false;
   }

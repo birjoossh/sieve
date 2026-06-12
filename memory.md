@@ -5,6 +5,66 @@ finding worth saving the next session a re-derivation goes here.
 
 ---
 
+## 2026-06-12 (live debug) · LinkedIn's `chrome-extension://invalid` console flood is NOT ours; current build's filter path is ms-fast on the real collections page
+
+User reported "a barrage of errors" + "slow filter application" on
+`/jobs/collections/recommended/?…&start=48`. Verified live (headed Chromium,
+dist build, logged-in profile at `~/.cache/nf-tests/linkedin-userdata`):
+
+- The flood is `GET chrome-extension://invalid/ — net::ERR_FAILED` at
+  ~10/sec, initiated by LINKEDIN'S OWN aero-v1 script (CDP initiator stack
+  shows only licdn frames — their wrapped `window.fetch`). Decisive
+  counterfactual: with our content script fully UNREGISTERED and zero
+  extension code in the page, the flood continued (77 errors in 8s).
+  Chrome masks blocked/unknown extension-resource fetches as
+  `chrome-extension://invalid` — this is LinkedIn probing extension
+  resources (anti-scraper detection), unrelated to Negative Filter. Do
+  not chase it again.
+- Filter path on today's build, measured on the live page: mount 2.3s
+  after nav (document_idle fires pre-hydration → "no stub matched" log →
+  retry loop lands the legacy stub `site:linkedin:jobs:v1`), setFilters
+  round-trip 6ms, first card hidden in 10ms, zero PerformanceObserver
+  longtasks, jobs-guest description fetches all 2xx. Zero console errors
+  from our origin across the whole session.
+- Page-3 trivia: `start=48` on a 52-result collection has only 4 jobs —
+  `items: 4` is correct, not a detection miss.
+- If a user reports slowness on an INSTALLED build, first ask whether it
+  predates the 2026-06-12 perf fixes (per-item regex recompile, O(n×depth)
+  detect rescoring) — reload the unpacked/packed extension before
+  debugging live.
+- Harness for this kind of session: /tmp/nf-live-debug.mjs — loads dist/
+  with <all_urls> baked in, persistent logged-in profile, streams console
+  to /tmp/nf-live-console.log, and executes /tmp/nf-live-cmd.js on mtime
+  change with {context, sw, page} (poor man's REPL). Google SSO fails in
+  automation; use the LinkedIn email+password form.
+
+## 2026-06-12 (audit) · todo.md fix round: privilege-gating by sender ORIGIN, not sender.tab; local-day spend epochs make specs TZ-sensitive
+
+Gating privileged SW messages (`enableDomain`/`disableDomain`) on
+`sender.tab === undefined` looked right but broke 19 integration specs:
+the test harness opens `panel.html` as a regular tab, and ANY extension
+page loaded in a tab gets `sender.tab` set — same for users who open the
+panel URL directly. The correct boundary is "our extension origin vs a
+content script in a web page": `sender.origin ===
+chrome-extension://<runtime.id>` (URL-prefix fallback). Content scripts
+always report the web page's origin.
+
+Spend epochs are now LOCAL-calendar (rollover at the user's midnight,
+todo.md fix). Anything seeding `nf:spend-ledger` epochs must use
+`Math.floor((now - tzOffsetMin*60000) / DAY)` and
+`getFullYear()*12 + getMonth()` — UTC math drifts a day/month depending
+on the host TZ (4.7 spec bit by this).
+
+Behavior contracts changed deliberately this round (specs updated with
+them): a rejected regex disables only that filter and reports a
+`filterError` push (engine takes an `onFilterError` callback); the 5.7
+checking indicator is the `data-nf-checking` attribute + ::after pseudo —
+no inserted node, so removal is byte-identical; `findItems`/`readField`
+swallow malformed selectors (bad LLM/imported selector = 0 items / field
+absent, never a dead message port). The heal observer only watches
+attributes in detached mode, but keeps the microtask debounce — the 6.7
+gate asserts heal-within-a-tick.
+
 ## 2026-06-12 (later) · Feedback round 2: the Carousell numeric bug was a hardcoded field name, not parsing; grid fixtures assert `.ctile` not `.sliver`; "page detected" sentinel is data-role="page-detected"
 
 The real reason "Price > 4000" never worked on Carousell: panel.ts bound

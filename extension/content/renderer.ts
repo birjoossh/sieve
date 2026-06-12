@@ -113,10 +113,12 @@ const STYLES = `
 .filt.layout-grid > .ctile:hover { background: #eaeef2; }
 .filt.layout-grid.restored > .ctile { display: none; }
 /* Checking state (Slice 5.7): items mid-deep-scan get a small inline
-   spinner. We add an absolutely-positioned indicator element rather
-   than restyling the card so the passing-card outerHTML still snaps
-   back to identical when the spinner is removed. */
-.nf-check-mark {
+   indicator. Rendered as a pseudo-element off a data attribute — never an
+   inserted node: React-managed lists strand or duplicate foreign children
+   on reconciliation, and removeAttribute() restores the passing card's
+   outerHTML byte-identically with no race against a framework re-render. */
+[data-nf-checking]::after {
+  content: '⏳ checking…';
   display: inline-block;
   margin-left: 6px;
   padding: 1px 6px;
@@ -250,9 +252,6 @@ export class Renderer {
   /** Slice 5.7: items currently in the "checking" state (deep scan in
    *  flight). Cleared once the engine apply() resolves them. */
   private readonly checking = new Set<string>();
-  /** Spinner element per checking item — held so we can remove it
-   *  cleanly without re-querying. */
-  private readonly checkMarkById = new Map<string, HTMLElement>();
   private nextId = 0;
   private lastSummaries: ItemSummary[] = [];
   /** `wrap` reparents into `.filt`; `detached` only mutates class/data
@@ -303,6 +302,12 @@ export class Renderer {
    *  inputs is a DOM no-op. Returns one summary per item, in input order. */
   apply(verdicts: Map<Element, ItemVerdict>): ItemSummary[] {
     this.lastVerdicts = verdicts;
+    // Virtualized lists drop nodes from the document but our strong-ref
+    // maps would pin them (and their subtrees) forever — an afternoon of
+    // LinkedIn pagination leaked whole card trees. Restored/checking id
+    // sets survive (an id-stable card scrolled back in keeps its state);
+    // only Element-keyed entries are swept.
+    this.sweepDisconnected();
     // Table parts can never be wrapped: a <div> wrapper inside <tbody>
     // is invalid table structure and collapses the whole table (seen
     // live on news.ycombinator.com — every passing row vanished). The
@@ -346,11 +351,11 @@ export class Renderer {
       }
 
       // 5.7: the engine's verdict resolves the checking state once
-      // deep data is in. Drop the checking flag + spinner now that
+      // deep data is in. Drop the checking flag + indicator now that
       // the verdict is definitive.
       if (this.checking.has(id) && verdict.state !== 'checking') {
         this.checking.delete(id);
-        this.removeCheckMark(id);
+        item.removeAttribute('data-nf-checking');
       }
 
       // Reported state folds the per-item restored bit into the engine's
@@ -409,19 +414,14 @@ export class Renderer {
     if (on) {
       if (this.checking.has(itemId)) return;
       this.checking.add(itemId);
-      const mark = this.opts.doc.createElement('span');
-      mark.className = 'nf-check-mark';
-      mark.dataset['nfId'] = itemId;
-      mark.textContent = '⏳ checking…';
-      item.appendChild(mark);
-      this.checkMarkById.set(itemId, mark);
+      item.setAttribute('data-nf-checking', '');
       // Update cached summary so the panel sees the checking state
       // without waiting for the next engine pass.
       const summary = this.lastSummaries.find((s) => s.id === itemId);
       if (summary) summary.state = 'checking';
     } else {
       this.checking.delete(itemId);
-      this.removeCheckMark(itemId);
+      item.removeAttribute('data-nf-checking');
     }
   }
 
@@ -441,9 +441,28 @@ export class Renderer {
   // Internals
   // -------------------------------------------------------------------------
 
+  /** Drop Element-keyed entries for nodes virtualization removed from the
+   *  document. Map.delete during for..of iteration is spec-safe. */
+  private sweepDisconnected(): void {
+    for (const [id, el] of this.itemById) {
+      if (!el.isConnected) this.itemById.delete(id);
+    }
+    for (const el of this.detachedFiltered.keys()) {
+      if (!el.isConnected) this.detachedFiltered.delete(el);
+    }
+    for (const el of this.companionsByItem.keys()) {
+      if (!el.isConnected) this.companionsByItem.delete(el);
+    }
+  }
+
   private ensureId(item: Element): string {
     let id = this.idByItem.get(item);
-    if (id !== undefined) return id;
+    if (id !== undefined) {
+      // Re-register: the sweep drops disconnected entries, and a virtualizer
+      // may re-attach the same node later — the id lookup must keep working.
+      this.itemById.set(id, item);
+      return id;
+    }
     // Prefer a stable per-item identity (data-id, then LinkedIn's
     // componentkey). The componentkey-derived id also lets
     // handleRecycledItem clean up when virtualization re-assigns the same
@@ -473,7 +492,7 @@ export class Renderer {
     this.restored.delete(cached);
     if (this.checking.has(cached)) {
       this.checking.delete(cached);
-      this.removeCheckMark(cached);
+      item.removeAttribute('data-nf-checking');
     }
     this.itemById.delete(cached);
     this.idByItem.delete(item);
@@ -602,11 +621,12 @@ export class Renderer {
 
   /** Following sibling <tr>s up to the next known item — the subtext /
    *  spacer rows that visually belong to this row. Capped so a generic
-   *  table can't make the walk swallow unrelated rows. */
+   *  table can't make the walk swallow unrelated rows. Always walked
+   *  fresh: live-updating tables insert rows after the first computation,
+   *  and a cached set left late-arriving companions visible (or hid rows
+   *  that no longer belong) until the item was unfiltered once. */
   private companionsOf(item: Element): Element[] {
-    let companions = this.companionsByItem.get(item);
-    if (companions) return companions;
-    companions = [];
+    const companions: Element[] = [];
     let sib = item.nextElementSibling;
     while (
       sib &&
@@ -618,14 +638,27 @@ export class Renderer {
       companions.push(sib);
       sib = sib.nextElementSibling;
     }
-    this.companionsByItem.set(item, companions);
     return companions;
   }
 
+  /** companionsByItem records what is CURRENTLY hidden for the item — the
+   *  unhide path must release exactly that set, not a re-walk that might
+   *  miss rows the table moved. */
   private syncCompanions(item: Element, hidden: boolean): void {
-    for (const c of this.companionsOf(item)) {
-      if (hidden) c.classList.add('nf-companion-hidden');
-      else c.classList.remove('nf-companion-hidden');
+    if (hidden) {
+      const fresh = this.companionsOf(item);
+      const prev = this.companionsByItem.get(item);
+      if (prev) {
+        for (const c of prev) {
+          if (!fresh.includes(c)) c.classList.remove('nf-companion-hidden');
+        }
+      }
+      for (const c of fresh) c.classList.add('nf-companion-hidden');
+      this.companionsByItem.set(item, fresh);
+    } else {
+      const prev = this.companionsByItem.get(item) ?? this.companionsOf(item);
+      for (const c of prev) c.classList.remove('nf-companion-hidden');
+      this.companionsByItem.delete(item);
     }
   }
 
@@ -668,16 +701,28 @@ export class Renderer {
       if (wrapper.isConnected) wrapper.replaceWith(item);
       this.wrapperByItem.delete(item);
     }
+    // Detached mode needs attribute healing — re-observe with the wider
+    // options now that the mode is permanent.
+    this.installHealObserver();
   }
 
   private installHealObserver(): void {
+    this.healObserver?.disconnect();
     this.healObserver = new MutationObserver(() => this.scheduleHeal());
-    this.healObserver.observe(this.opts.itemSet, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'data-nf-reason', 'data-nf-id'],
-    });
+    // Attribute watching only matters in detached mode (React stripping our
+    // classes / data attributes). In wrap mode the only heal trigger is a
+    // reconciler removing a wrapper — childList covers that, and skipping
+    // attributes spares busy SPAs a heal pass per styling mutation burst.
+    const init: MutationObserverInit =
+      this.renderMode === 'detached'
+        ? {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'data-nf-reason', 'data-nf-id'],
+          }
+        : { childList: true, subtree: true };
+    this.healObserver.observe(this.opts.itemSet, init);
   }
 
   private scheduleHeal(): void {
@@ -744,12 +789,5 @@ export class Renderer {
 
   private sliverText(verdict: ItemVerdict): string {
     return verdict.reason ? `Hidden — ${verdict.reason}` : 'Hidden';
-  }
-
-  private removeCheckMark(itemId: string): void {
-    const mark = this.checkMarkById.get(itemId);
-    if (!mark) return;
-    mark.remove();
-    this.checkMarkById.delete(itemId);
   }
 }

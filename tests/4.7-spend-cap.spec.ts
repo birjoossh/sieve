@@ -47,13 +47,19 @@ test.describe('4.7 — spend cap (engine layer)', () => {
             headers: { 'content-type': 'application/json' },
           });
 
-        // Pre-seed ledger at the daily cap → first call blocks.
+        // Pre-seed ledger at the daily cap → first call blocks. Epochs use
+        // the ledger's LOCAL-calendar indices (rollover happens at the
+        // user's midnight, not UTC's).
         const now = Date.UTC(2026, 4, 25, 12, 0, 0);
+        const localDay = Math.floor(
+          (now - new Date(now).getTimezoneOffset() * 60_000) / (24 * 60 * 60 * 1000),
+        );
+        const localMonth = new Date(now).getFullYear() * 12 + new Date(now).getMonth();
         const overDay = nf.memorySpendChecker(
           {
-            dailyEpoch: Math.floor(now / (24 * 60 * 60 * 1000)),
+            dailyEpoch: localDay,
             dailyCount: 50,
-            monthlyEpoch: 2026 * 12 + 4,
+            monthlyEpoch: localMonth,
             monthlyCount: 60,
           },
           { daily: 50, monthly: 1000 },
@@ -143,13 +149,18 @@ test.describe('4.7 — spend cap (engine layer)', () => {
             status: 200,
           });
 
-        const now = Date.UTC(2026, 4, 25);
+        const now = Date.UTC(2026, 4, 25, 12, 0, 0);
         // Daily under cap, monthly over cap → blocks with period=month.
+        // Local-calendar epochs to match the ledger's rollover indices.
+        const localDay = Math.floor(
+          (now - new Date(now).getTimezoneOffset() * 60_000) / (24 * 60 * 60 * 1000),
+        );
+        const localMonth = new Date(now).getFullYear() * 12 + new Date(now).getMonth();
         const overMonth = nf.memorySpendChecker(
           {
-            dailyEpoch: Math.floor(now / (24 * 60 * 60 * 1000)),
+            dailyEpoch: localDay,
             dailyCount: 10,
-            monthlyEpoch: 2026 * 12 + 4,
+            monthlyEpoch: localMonth,
             monthlyCount: 1000,
           },
           { daily: 50, monthly: 1000 },
@@ -194,9 +205,12 @@ test.describe('4.7 — spend cap (UI layer)', () => {
     // the panel page → refresh() reads the ledger via getSpendStatus()
     // → llm-settings component renders the warning.
     await env.panel.evaluate(async () => {
-      const today = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
-      const d = new Date();
-      const month = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      const now = Date.now();
+      const today = Math.floor(
+        (now - new Date(now).getTimezoneOffset() * 60_000) / (24 * 60 * 60 * 1000),
+      );
+      const d = new Date(now);
+      const month = d.getFullYear() * 12 + d.getMonth();
       await chrome.storage.local.set({
         'nf:spend-ledger': {
           dailyEpoch: today,

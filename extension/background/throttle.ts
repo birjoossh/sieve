@@ -57,20 +57,25 @@ export class Throttler {
   async acquire(domain: string): Promise<() => void> {
     const state = this.stateFor(domain);
 
+    // Jitter BEFORE contending for a slot — uniform [0, jitterMs). Each
+    // caller de-synchronizes independently; sleeping it while holding the
+    // slot starved healthy domains' waiters for no politeness gain.
+    if (this.jitterMs > 0) {
+      await this.sleep(Math.floor(this.random() * this.jitterMs));
+    }
+
     // Wait for room in the semaphore.
     while (state.inFlight >= this.concurrency) {
       await new Promise<void>((r) => state.waiters.push(r));
     }
     state.inFlight += 1;
 
-    // Apply backoff if this domain is in a cooled-down window.
+    // Backoff is deliberately slept while HOLDING the slot: a 429'd domain
+    // should see its whole pipeline pause, not have other waiters slip
+    // through the freed slot mid-cooldown.
     if (state.backoffUntil > Date.now()) {
       const remaining = state.backoffUntil - Date.now();
       await this.sleep(remaining);
-    }
-    // Jitter — uniform [0, jitterMs).
-    if (this.jitterMs > 0) {
-      await this.sleep(Math.floor(this.random() * this.jitterMs));
     }
 
     let released = false;

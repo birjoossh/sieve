@@ -22,9 +22,9 @@ import { isVolatileClass } from './stable-classes.js';
 import type { FieldKind, LayoutKind, Schema } from '../shared/types.js';
 
 /** Count an itemSelector's matches without throwing on a malformed string. */
-function countMatches(doc: Document, selector: string): number {
+function countMatches(root: ParentNode, selector: string): number {
   try {
-    return doc.querySelectorAll(selector).length;
+    return root.querySelectorAll(selector).length;
   } catch {
     return 0;
   }
@@ -204,9 +204,11 @@ export async function discover(
   // the one card they "saw" in the distilled DOM (the classic LinkedIn
   // "Detected: list · 1 item"). If a local generalization of the same detected
   // item-set captures more elements, swap the selectors in — keeping the LLM's
-  // field mappings intact for named/numeric filters.
+  // field mappings intact for named/numeric filters. Both counts are scoped
+  // to the detected container so a leaf selector's lookalikes elsewhere on
+  // the page can't tip the comparison toward an over-broad local selector.
   const local = localizeItemSet(itemSet);
-  if (local && local.count > countMatches(doc, schema.itemSelector)) {
+  if (local && local.count > countMatches(itemSet, schema.itemSelector)) {
     schema.itemSetSelector = local.itemSetSelector;
     schema.itemSelector = local.itemSelector;
   }

@@ -117,7 +117,16 @@ async function hydrateSavedFilters(c: PageContext): Promise<void> {
 }
 
 function recompute(c: PageContext): void {
-  const verdicts = evaluate(c.schema, c.items, c.filters, c.detailText);
+  const verdicts = evaluate(c.schema, c.items, c.filters, c.detailText, (err) => {
+    // A rejected filter (unsafe regex) sits out this pass; the rest keep
+    // filtering. Tell the panel which one and why instead of dying silent.
+    pushToPanel({
+      t: 'filterError',
+      v: MESSAGE_VERSION,
+      filterId: err.filterId,
+      message: err.message,
+    });
+  });
   c.summaries = c.renderer.apply(verdicts);
   pushToPanel({ t: 'itemStates', v: MESSAGE_VERSION, items: c.summaries });
 }
@@ -314,6 +323,11 @@ function mount(schema: Schema, itemSet: Element): void {
       const next = new Set(ctx.items.filter((el) => el.isConnected));
       for (const el of added) next.add(el);
       ctx.items = [...next];
+      // detailText is keyed by Element — without this, every paginated-away
+      // card's 5–20 KB description stays pinned for the page's lifetime.
+      for (const el of ctx.detailText.keys()) {
+        if (!el.isConnected) ctx.detailText.delete(el);
+      }
       recompute(ctx);
       maybeScanDescriptions(ctx);
     },

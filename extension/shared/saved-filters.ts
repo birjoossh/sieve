@@ -27,11 +27,13 @@ function keyFor(fingerprint: string): string {
   return KEY_PREFIX + fingerprint;
 }
 
-/** Shape-validate a filter object pulled from storage. Storage is shared
- *  with the user's other devices and the schema may have shifted — we
- *  drop anything that doesn't match the current contract rather than
- *  let invalid filters land in the engine. */
-function isFilterShape(x: unknown): x is Filter {
+/** Shape-validate a filter object pulled from storage or an import file.
+ *  Storage is shared with the user's other devices and the schema may have
+ *  shifted — we drop anything that doesn't match the current contract
+ *  rather than let invalid filters land in the engine. Exported so the
+ *  panel's import path can validate BEFORE writing (saveFilters itself
+ *  writes whatever it's given). */
+export function isFilterShape(x: unknown): x is Filter {
   if (typeof x !== 'object' || x === null) return false;
   const r = x as Record<string, unknown>;
   if (typeof r['id'] !== 'string') return false;

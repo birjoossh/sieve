@@ -12,11 +12,15 @@
 //
 // Storage:
 //   chrome.storage.local key 'nf:spend-ledger' → SpendLedger
-//   - dailyEpoch / monthlyEpoch are integer epoch indices (days since
-//     1970, months since 1970×12) so rollover is just `!==`, no parsing.
+//   - dailyEpoch / monthlyEpoch are integer epoch indices (LOCAL calendar
+//     days since 1970, local months since 1970×12) so rollover is just
+//     `!==`, no parsing. Local, not UTC: "50 calls today" must reset at
+//     the user's midnight, not at 8am for someone in UTC+8.
 //
-// Caps come from LlmSettings (4.7 extension) with conservative defaults
-// (50/day, 1000/month) — see shared/settings.ts.
+// Caps are the hard-coded DEFAULT_CAPS below (50/day, 1000/month).
+// User-configurable caps via LlmSettings remain future work — nothing in
+// shared/settings.ts carries cap fields yet, and sw.ts constructs the
+// checker with the defaults unconditionally.
 
 export interface SpendLedger {
   dailyEpoch: number;
@@ -37,12 +41,15 @@ const STORAGE_KEY = 'nf:spend-ledger';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function epochDay(now: number): number {
-  return Math.floor(now / MS_PER_DAY);
+  // Shift by the local timezone offset so the index increments at the
+  // user's local midnight rather than UTC's.
+  const offsetMs = new Date(now).getTimezoneOffset() * 60_000;
+  return Math.floor((now - offsetMs) / MS_PER_DAY);
 }
 
 function epochMonth(now: number): number {
   const d = new Date(now);
-  return d.getUTCFullYear() * 12 + d.getUTCMonth();
+  return d.getFullYear() * 12 + d.getMonth();
 }
 
 function emptyLedger(now: number): SpendLedger {

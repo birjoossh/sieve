@@ -354,7 +354,7 @@ test.describe('4.1 — predicate kinds + safe-regex', () => {
     }
   });
 
-  test('regex predicate propagates UnsafeRegexError from evaluate', async () => {
+  test('rejected regex disables only that filter; the rest keep evaluating', async () => {
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage();
@@ -372,28 +372,38 @@ test.describe('4.1 — predicate kinds + safe-regex', () => {
           discoveredAt: 0,
         };
         const items = nf.findItems(schema);
-        try {
-          nf.evaluate(schema, items, [
-            {
-              id: 'bad',
-              fingerprint: 'fixture:rolecast:v1',
-              polarity: 'exclude',
-              field: 'snippet',
-              predicate: { op: 'regex', pattern: '(a+)+' },
-              deep: false,
-              saved: false,
-            },
-          ]);
-          return { thrown: false, name: null };
-        } catch (err) {
-          return {
-            thrown: true,
-            name: err instanceof Error ? err.name : 'unknown',
-          };
-        }
+        const bad = {
+          id: 'bad',
+          fingerprint: 'fixture:rolecast:v1',
+          polarity: 'exclude' as const,
+          field: 'snippet',
+          predicate: { op: 'regex' as const, pattern: '(a+)+' },
+          deep: false,
+          saved: false,
+        };
+        const good = {
+          id: 'good',
+          fingerprint: 'fixture:rolecast:v1',
+          polarity: 'exclude' as const,
+          field: 'snippet',
+          predicate: { op: 'containsAny' as const, phrases: ['Mandarin'] },
+          deep: false,
+          saved: false,
+        };
+        const errors: Array<{ filterId: string; message: string }> = [];
+        const verdicts = nf.evaluate(schema, items, [bad, good], undefined, (e) =>
+          errors.push(e),
+        );
+        const filtered = [...verdicts.values()].filter((v) => v.state === 'filtered').length;
+        return { errors, filtered, total: verdicts.size };
       });
-      expect(result.thrown).toBe(true);
-      expect(result.name).toBe('UnsafeRegexError');
+      // The unsafe regex sits out with a typed per-filter error…
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.filterId).toBe('bad');
+      expect(result.errors[0]!.message).toContain('UnsafeRegexError');
+      // …while the containsAny filter still hides the Mandarin cards.
+      expect(result.total).toBe(10);
+      expect(result.filtered).toBeGreaterThanOrEqual(1);
     } finally {
       await browser.close();
     }

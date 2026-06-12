@@ -38,33 +38,48 @@ export interface ItemVerdict {
   reason?: string;
 }
 
+/** A filter that couldn't participate in this evaluate() pass (rejected
+ *  regex, etc.). One bad filter must never abort the whole pass — the
+ *  remaining filters keep evaluating; the caller surfaces this to the
+ *  panel. */
+export interface FilterError {
+  filterId: string;
+  message: string;
+}
+
 /** Per-item supplementary text (the fetched job/article description) keyed by
  *  the item Element. Folded into ALL_TEXT_FIELD matching so a keyword can hit
  *  text that isn't on the card itself (LinkedIn job descriptions). */
 export type DetailText = ReadonlyMap<Element, string>;
 
-/** Read a field's text content from an item. Returns null if the field isn't
- *  defined on the schema, the selector doesn't match, or the matched element
- *  has no text. Trimmed; further normalization is each predicate's job. */
-function readField(
-  item: Element,
-  fieldName: string,
-  schema: Schema,
-  detailText?: DetailText,
-): string | null {
-  // Sentinel: match against the whole item's visible text PLUS any fetched
-  // description text. Keeps the free-text phrase filter working regardless of
-  // how well the schema's named fields map to the live DOM — the keyword just
-  // has to appear anywhere on the card or in its (deep-fetched) description.
-  if (fieldName === ALL_TEXT_FIELD) {
-    const cardText = normalizeText(item.textContent ?? '');
-    const extra = detailText?.get(item);
-    const text = extra ? `${cardText} ${normalizeText(extra)}` : cardText;
-    return text.length > 0 ? text : null;
-  }
+/** The ALL_TEXT_FIELD read: the whole item's visible text PLUS any fetched
+ *  description text. Keeps the free-text phrase filter working regardless of
+ *  how well the schema's named fields map to the live DOM — the keyword just
+ *  has to appear anywhere on the card or in its (deep-fetched) description.
+ *  Callers cache the result per item for the duration of one evaluate()
+ *  pass — re-normalizing a card's textContent once per applicable filter
+ *  was measurable on 500-item lists. */
+function readAllText(item: Element, detailText?: DetailText): string | null {
+  const cardText = normalizeText(item.textContent ?? '');
+  const extra = detailText?.get(item);
+  const text = extra ? `${cardText} ${normalizeText(extra)}` : cardText;
+  return text.length > 0 ? text : null;
+}
+
+/** Read a named field's text content from an item. Returns null if the field
+ *  isn't defined on the schema, the selector doesn't match (or is malformed —
+ *  field selectors come from the LLM or imported filter sets, so an invalid
+ *  one means "field absent", never a thrown evaluate()), or the matched
+ *  element has no text. */
+function readField(item: Element, fieldName: string, schema: Schema): string | null {
   const field = schema.fields[fieldName];
   if (!field) return null;
-  const el = item.querySelector(field.selector);
+  let el: Element | null;
+  try {
+    el = item.querySelector(field.selector);
+  } catch {
+    return null;
+  }
   const text = el?.textContent?.trim();
   return text && text.length > 0 ? text : null;
 }
@@ -102,7 +117,11 @@ function parseFirstNumber(text: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function evalPredicate(text: string, pred: Predicate): PredicateOutcome {
+function evalPredicate(
+  text: string,
+  pred: Predicate,
+  compiledRegex?: RegExp,
+): PredicateOutcome {
   switch (pred.op) {
     case 'containsAny': {
       // Case-insensitive substring across the phrase list. Phrases are
@@ -131,11 +150,12 @@ function evalPredicate(text: string, pred: Predicate): PredicateOutcome {
       return { matched: false };
     }
     case 'regex': {
-      // safeCompileRegex throws UnsafeRegexError on length cap or nested
-      // quantifier — propagate up so the panel can surface the typed error
-      // (4.1 gate). RegExp.exec returns the match or null.
-      const re = safeCompileRegex(pred.pattern, pred.flags);
-      const match = re.exec(text);
+      // Compiled once per filter in evaluate()'s prepare step (a 500-item
+      // list used to compile 500 RegExps per recompute) and pre-validated
+      // by safeCompileRegex there — a rejected pattern disables only that
+      // filter, never this whole pass.
+      if (!compiledRegex) return { matched: false };
+      const match = compiledRegex.exec(text);
       return match ? { matched: true, trigger: match[0] } : { matched: false };
     }
     case 'lessThan': {
@@ -168,33 +188,68 @@ function evalPredicate(text: string, pred: Predicate): PredicateOutcome {
   }
 }
 
+/** A filter plus its once-per-pass compiled regex (regex predicates only). */
+interface PreparedFilter {
+  filter: Filter;
+  regex: RegExp | undefined;
+}
+
 /** Evaluate every item against every applicable filter and return one
  *  verdict per item. Pure: no DOM mutation, no logging, no message
- *  dispatch. */
+ *  dispatch. A filter whose regex is rejected by the safety pre-check is
+ *  reported through `onFilterError` and skipped — the remaining filters
+ *  keep evaluating (one bad import must not disable all filtering). */
 export function evaluate(
   schema: Schema,
   items: Iterable<Element>,
   filters: readonly Filter[],
   detailText?: DetailText,
+  onFilterError?: (err: FilterError) => void,
 ): Map<Element, ItemVerdict> {
   const out = new Map<Element, ItemVerdict>();
 
   // Only filters bound to this schema's fingerprint apply. Cross-fingerprint
   // filters can land in storage (saved-filter reapplication, 4.5) but the
-  // engine ignores them here.
-  const applicable = filters.filter((f) => f.fingerprint === schema.fingerprint);
+  // engine ignores them here. Regexes compile once per filter, up front.
+  const prepared: PreparedFilter[] = [];
+  for (const filter of filters) {
+    if (filter.fingerprint !== schema.fingerprint) continue;
+    if (filter.predicate.op === 'regex') {
+      try {
+        prepared.push({
+          filter,
+          regex: safeCompileRegex(filter.predicate.pattern, filter.predicate.flags),
+        });
+      } catch (err) {
+        onFilterError?.({
+          filterId: filter.id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+      continue;
+    }
+    prepared.push({ filter, regex: undefined });
+  }
 
   for (const item of items) {
     let verdict: ItemVerdict = { state: 'passing' };
+    // ALL_TEXT_FIELD reads are cached per item: undefined = not yet read.
+    let allText: string | null | undefined;
 
-    for (const filter of applicable) {
-      const text = readField(item, filter.field, schema, detailText);
+    for (const { filter, regex } of prepared) {
+      let text: string | null;
+      if (filter.field === ALL_TEXT_FIELD) {
+        if (allText === undefined) allText = readAllText(item, detailText);
+        text = allText;
+      } else {
+        text = readField(item, filter.field, schema);
+      }
       // Missing fields can't decide the filter — treat as "no information,"
       // skip. (Slice 4.5 may revisit for `keep` filters that should default
       // to exclude on missing data.)
       if (text === null) continue;
 
-      const outcome = evalPredicate(text, filter.predicate);
+      const outcome = evalPredicate(text, filter.predicate, regex);
       const excludes =
         (filter.polarity === 'exclude' && outcome.matched) ||
         (filter.polarity === 'keep' && !outcome.matched);
@@ -236,8 +291,16 @@ export function findItems(
   // items while 20 sat in the right one). A caller that already holds the
   // detected container passes it; otherwise pick the candidate that
   // actually contains item matches.
+  // itemSelector comes from the LLM or an imported filter set — a malformed
+  // one must read as "no items", not throw out of evaluate() → recompute()
+  // and leave the panel staring at a dead message port.
   const root: ParentNode = knownItemSet ?? bestRoot(schema, doc);
-  const matches = Array.from(root.querySelectorAll(schema.itemSelector));
+  let matches: Element[];
+  try {
+    matches = Array.from(root.querySelectorAll(schema.itemSelector));
+  } catch {
+    return [];
+  }
   // On table-layout pages (HN is one giant nested table) a generic local
   // selector like `tr` matches layout rows that CONTAIN the real story
   // rows. Treating an ancestor as an item is catastrophic: its textContent
@@ -259,7 +322,12 @@ function bestRoot(schema: Schema, doc: Document): ParentNode {
   let best: Element | null = null;
   let bestCount = 0;
   for (const c of candidates) {
-    const n = c.querySelectorAll(schema.itemSelector).length;
+    let n: number;
+    try {
+      n = c.querySelectorAll(schema.itemSelector).length;
+    } catch {
+      n = 0;
+    }
     if (n > bestCount) {
       best = c;
       bestCount = n;

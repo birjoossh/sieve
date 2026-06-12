@@ -34,13 +34,65 @@ void chrome.action.setBadgeBackgroundColor({ color: '#059669' }).catch(() => und
 // content script's own history patch — MV3 isolated worlds don't share the
 // History object (memory.md 2026-06-06; bit us live on LinkedIn search).
 // tabs.onUpdated DOES fire with changeInfo.url for pushState, so relay it.
-// Tabs without our content script reject the message — swallowed.
+// Scoped to origins with a registered content script (the registration
+// table already knows them): the `tabs` permission hands us every tab's
+// URL, so the relay must not act on — or message — tabs the user never
+// enabled. Tabs without our content script reject the message — swallowed.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.url === undefined) return;
-  void chrome.tabs
-    .sendMessage(tabId, { t: 'spaNavigated', v: MESSAGE_VERSION, url: changeInfo.url })
-    .catch(() => undefined);
+  const url = changeInfo.url;
+  if (url === undefined) return;
+  void (async () => {
+    try {
+      const origin = new URL(url).origin;
+      const registered = await chrome.scripting.getRegisteredContentScripts({
+        ids: [scriptIdFor(origin)],
+      });
+      if (registered.length === 0) return;
+      await chrome.tabs.sendMessage(tabId, {
+        t: 'spaNavigated',
+        v: MESSAGE_VERSION,
+        url,
+      });
+    } catch {
+      // Unparseable URL or no listener in the tab — nothing to relay.
+    }
+  })();
 });
+
+// Hygiene sweep on SW startup: the schema cache writes one storage.local
+// key per fingerprint forever, and the deep queue keeps settled items.
+// Neither is ever read again past its useful life. (get(null) stays inside
+// the SW — nothing read here may leave the process; see PRIVACY.md.)
+const SCHEMA_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+async function sweepStorage(): Promise<void> {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const now = Date.now();
+    const expired: string[] = [];
+    for (const [key, value] of Object.entries(all)) {
+      if (!key.startsWith('nf:schema:')) continue;
+      const discoveredAt = (value as { discoveredAt?: unknown } | null)?.discoveredAt;
+      if (typeof discoveredAt !== 'number' || now - discoveredAt > SCHEMA_TTL_MS) {
+        expired.push(key);
+      }
+    }
+    if (expired.length > 0) await chrome.storage.local.remove(expired);
+    const queue = all['nf:deep-queue'];
+    if (Array.isArray(queue)) {
+      const kept = queue.filter(
+        (item) => (item as { status?: unknown } | null)?.status !== 'done',
+      );
+      if (kept.length !== queue.length) {
+        await chrome.storage.local.set({ 'nf:deep-queue': kept });
+      }
+    }
+  } catch (err) {
+    console.warn('[negative-filter] storage sweep failed:', err);
+  }
+}
+
+void sweepStorage();
 
 async function registerForOrigin(origin: string): Promise<void> {
   const id = scriptIdFor(origin);
@@ -72,17 +124,65 @@ async function unregisterForOrigin(origin: string): Promise<void> {
   await chrome.scripting.unregisterContentScripts({ ids: [id] });
 }
 
-async function handle(msg: PanelMsg): Promise<SwToPanel> {
+// Defense-in-depth for the LLM-bearing messages: any content script in any
+// granted page can reach this bus, so a compromised renderer could burn the
+// user's spend with attacker-shaped payloads. In-memory is fine here — the
+// window resets when the SW dies, and the persistent spend ledger remains
+// the durable cap; this just stops a tight loop cold.
+const LLM_MSG_WINDOW_MS = 60_000;
+const LLM_MSG_MAX_PER_WINDOW = 10;
+const llmMsgLog = new Map<string, number[]>();
+
+function llmRateLimited(sender: chrome.runtime.MessageSender): boolean {
+  const key = sender.tab?.id !== undefined ? `tab:${sender.tab.id}` : 'extension-ui';
+  const now = Date.now();
+  const recent = (llmMsgLog.get(key) ?? []).filter((t) => now - t < LLM_MSG_WINDOW_MS);
+  if (recent.length >= LLM_MSG_MAX_PER_WINDOW) {
+    llmMsgLog.set(key, recent);
+    return true;
+  }
+  recent.push(now);
+  llmMsgLog.set(key, recent);
+  return false;
+}
+
+/** True when the message comes from one of OUR extension pages (side
+ *  panel, options, panel.html opened in a tab) rather than a content
+ *  script running inside a granted web page. Content scripts report the
+ *  web page's URL/origin; extension pages report chrome-extension://<id>. */
+function isExtensionUiSender(sender: chrome.runtime.MessageSender): boolean {
+  const extOrigin = `chrome-extension://${chrome.runtime.id}`;
+  if (sender.origin !== undefined) return sender.origin === extOrigin;
+  return sender.url !== undefined && sender.url.startsWith(`${extOrigin}/`);
+}
+
+async function handle(msg: PanelMsg, sender: chrome.runtime.MessageSender): Promise<SwToPanel> {
   switch (msg.t) {
     case 'ping':
       return { t: 'pong', v: MESSAGE_VERSION };
     case 'enableDomain':
-      await registerForOrigin(msg.origin);
-      return { t: 'ack', v: MESSAGE_VERSION };
     case 'disableDomain':
-      await unregisterForOrigin(msg.origin);
+      // Registration changes are privileged: a content script inside one
+      // granted page must not be able to register the content script on
+      // arbitrary other origins. Only extension-origin pages qualify.
+      if (!isExtensionUiSender(sender)) {
+        return {
+          t: 'err',
+          v: MESSAGE_VERSION,
+          message: 'enable/disable is only accepted from the extension UI.',
+        };
+      }
+      if (msg.t === 'enableDomain') await registerForOrigin(msg.origin);
+      else await unregisterForOrigin(msg.origin);
       return { t: 'ack', v: MESSAGE_VERSION };
     case 'discoverSchema': {
+      if (llmRateLimited(sender)) {
+        return {
+          t: 'err',
+          v: MESSAGE_VERSION,
+          message: 'rate-limited: too many LLM requests — try again in a minute.',
+        };
+      }
       // Production wire-up of Slice 3.x's deferred capstone: content
       // ships us a distilled DOM + fingerprint, we route through the
       // cache + LLM and return the Schema (or err with a reason the
@@ -133,6 +233,13 @@ async function handle(msg: PanelMsg): Promise<SwToPanel> {
       // LLM curation of the locally-extracted candidates (bugs.md #1
       // feedback). Same key + spend-cap contract as discoverSchema; the
       // panel falls back to the raw local candidates on any err.
+      if (llmRateLimited(sender)) {
+        return {
+          t: 'err',
+          v: MESSAGE_VERSION,
+          message: 'rate-limited: too many LLM requests — try again in a minute.',
+        };
+      }
       const settings = await loadLlmSettings();
       if (!settings || settings.apiKey.trim() === '') {
         return {
@@ -160,13 +267,13 @@ async function handle(msg: PanelMsg): Promise<SwToPanel> {
   }
 }
 
-chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   // Content's itemStates broadcast reaches the SW as well as the panel
   // (chrome.runtime.sendMessage fans out to both). Piggy-back on it for
   // the per-tab badge: restored items are visible again, so only
   // still-hidden ones count.
   if (isContentToPanel(raw) && raw.t === 'itemStates') {
-    const tabId = _sender.tab?.id;
+    const tabId = sender.tab?.id;
     if (tabId !== undefined) {
       const hidden = raw.items.filter((i) => i.state === 'filtered').length;
       void chrome.action
@@ -183,7 +290,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
 
   // Async handler — keep the message port open by returning true. The
   // listener spec requires the literal `true` (not a truthy value).
-  handle(raw)
+  handle(raw, sender)
     .then((reply) => sendResponse(reply))
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);

@@ -37,7 +37,7 @@ test.describe('5.7 — checking renderer state', () => {
         renderer.setChecking('r-003', true);
 
         // Visual indicators present.
-        const spinnersBefore = document.querySelectorAll('.nf-check-mark').length;
+        const spinnersBefore = document.querySelectorAll('[data-nf-checking]').length;
         // Panel state reflects checking.
         const checkingCount = renderer.summaries().filter((s) => s.state === 'checking').length;
 
@@ -52,7 +52,7 @@ test.describe('5.7 — checking renderer state', () => {
         const verdicts = nf.evaluate(schema, items, [filter]);
         renderer.apply(verdicts);
 
-        const spinnersAfter = document.querySelectorAll('.nf-check-mark').length;
+        const spinnersAfter = document.querySelectorAll('[data-nf-checking]').length;
         const tally: Record<string, number> = {};
         for (const s of renderer.summaries()) {
           tally[s.state] = (tally[s.state] ?? 0) + 1;
@@ -93,9 +93,9 @@ test.describe('5.7 — checking renderer state', () => {
         const nf = (window as unknown as { __nf: typeof window['__nf'] }).__nf;
         const { renderer } = nf.mountRenderer([]);
         renderer.setChecking('r-004', true);
-        const before = document.querySelectorAll('.nf-check-mark').length;
+        const before = document.querySelectorAll('[data-nf-checking]').length;
         renderer.setChecking('r-004', false);
-        const after = document.querySelectorAll('.nf-check-mark').length;
+        const after = document.querySelectorAll('[data-nf-checking]').length;
         return { before, after };
       });
       expect(result.before).toBe(1);
