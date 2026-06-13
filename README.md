@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="out/store-assets/panel-hero-1280x800.png" width="640" alt="Negative Filter side panel on a job board">
+  <img src="out/store-assets/demo.gif" width="760" alt="Negative Filter demo: enable a site, hide items by phrase, watch them collapse, restore with one click">
 </p>
 
 ---
