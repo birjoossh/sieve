@@ -48,8 +48,12 @@ grids) on sites the user explicitly enables.
 
 --- Permissions justification (review form) ---
 • sidePanel: the filter UI lives in Chrome's side panel
-• tabs: show the active site's hostname on the Enable button before any
-  host permission is granted
+• tabs: (1) show the active site's hostname on the Enable button before
+  any host permission is granted, and (2) detect single-page-app route
+  changes (history.pushState updates the URL without a reload, reported
+  only by tabs.onUpdated) so filters re-apply after an in-site search.
+  The relay checks the tab's origin against the user's enabled-origins
+  list and ignores every other tab.
 • scripting: inject the content script on origins the user enables
 • storage: persist filters, settings, and the spend ledger locally
 • alarms: resume queued background work after service-worker restarts
