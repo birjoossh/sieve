@@ -12,14 +12,29 @@ User reported "a barrage of errors" + "slow filter application" on
 dist build, logged-in profile at `~/.cache/nf-tests/linkedin-userdata`):
 
 - The flood is `GET chrome-extension://invalid/ — net::ERR_FAILED` at
-  ~10/sec, initiated by LINKEDIN'S OWN aero-v1 script (CDP initiator stack
-  shows only licdn frames — their wrapped `window.fetch`). Decisive
-  counterfactual: with our content script fully UNREGISTERED and zero
-  extension code in the page, the flood continued (77 errors in 8s).
+  ~8-10/sec, initiated by LINKEDIN'S OWN aero-v1 script (CDP initiator
+  stack shows only licdn frames, line 12053 — their wrapped `window.fetch`).
   Chrome masks blocked/unknown extension-resource fetches as
   `chrome-extension://invalid` — this is LinkedIn probing extension
   resources (anti-scraper detection), unrelated to Negative Filter. Do
   not chase it again.
+- CONFIRMED on v2 too (2026-06-13, `/jobs/search-results/`, the
+  `site:linkedin:jobs:v2` detached stub, 25 items / 17 filtered). A
+  4-condition within-session isolation: (A) ext UNREGISTERED = 8.3/s,
+  (B) mounted no filters = 8.4/s, (C) phrase filter = 9.7/s, (D) user's
+  3 phrases = 9.7/s. The flood is there at ~8/s even fully unregistered,
+  and our content script injects ZERO chrome-extension:// URLs into the
+  page DOM (`domLeak.count: 0`) — nothing of ours for LinkedIn to probe.
+  WATCH OUT: a single earlier reading showed "0 without extension" — that
+  was a ramp-up timing artifact right after a reload, NOT evidence we
+  cause it. Five measurements total; only that one was 0. Their probe
+  rate is variable/session-dependent; don't read one window as causal.
+- Performance verdict on v2 with the extension ACTIVE + filters applied:
+  0 PerformanceObserver long tasks, event-loop lag p95 4ms (vs 1ms
+  ext-off), 30fps (== ext-off). Our code does not slow the page. The
+  user's perceived "slow response" is DevTools itself rendering 1000+
+  red error rows (1163 issues), which makes the DevTools UI sluggish —
+  closing DevTools or filtering `-invalid` in the Network box restores it.
 - Filter path on today's build, measured on the live page: mount 2.3s
   after nav (document_idle fires pre-hydration → "no stub matched" log →
   retry loop lands the legacy stub `site:linkedin:jobs:v1`), setFilters
