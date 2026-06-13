@@ -19,7 +19,12 @@
 // row. Test seam: each row has `data-error="<kind>"` so the spec can
 // assert presence without coupling to copy.
 
-export type ErrorKind = 'missing-schema' | 'spend-cap' | 'llm-error' | 'unsafe-regex';
+export type ErrorKind =
+  | 'missing-schema'
+  | 'spend-cap'
+  | 'llm-error'
+  | 'unsafe-regex'
+  | 'import-error';
 
 export interface PanelError {
   kind: ErrorKind;
@@ -35,6 +40,7 @@ const TITLES: Record<ErrorKind, string> = {
   'spend-cap': 'Spend cap reached',
   'llm-error': 'LLM call failed',
   'unsafe-regex': 'Filter regex rejected',
+  'import-error': 'Filter import problem',
 };
 
 const HINTS: Record<ErrorKind, string> = {
@@ -46,6 +52,8 @@ const HINTS: Record<ErrorKind, string> = {
     'Re-try; if it persists, recheck your provider key under LLM provider.',
   'unsafe-regex':
     'The filter regex was rejected by the safety pre-check (length or nested quantifier). Tighten the pattern.',
+  'import-error':
+    'Some filters in the file were skipped or failed to save. Re-export from the source profile and retry.',
 };
 
 export function renderErrorPanel(host: HTMLElement, state: ErrorPanelState): void {

@@ -27,6 +27,7 @@ import {
 } from './components/numeric-filter.js';
 import { renderPageStatus } from './components/page-status.js';
 import {
+  baseUrlIssue,
   clearLlmSettings,
   loadLlmSettings,
   saveLlmSettings,
@@ -34,10 +35,15 @@ import {
 } from '../shared/settings.js';
 import {
   clearSavedFilters,
+  isFilterShape,
   loadSavedFilters,
   saveFilters,
 } from '../shared/saved-filters.js';
-import { parseExport, serializeExport } from '../shared/filter-io.js';
+import {
+  parseExport,
+  serializeExport,
+  type FilterImportResult,
+} from '../shared/filter-io.js';
 import { getSpendStatus, type SpendStatus } from '../background/spend.js';
 import {
   dismissDeepWarning,
@@ -113,6 +119,12 @@ interface PanelState {
   suggestError: string | null;
   /** Slice-3 wire-up: last discover failure (no API key, LLM error). */
   discoverError: string | null;
+  /** A filter the engine refused to run (unsafe/invalid regex). Cleared on
+   *  the next filter push; re-set by content if the filter is still bad. */
+  filterError: string | null;
+  /** Last import's soft failures (malformed rows dropped, sync-quota write
+   *  errors). Null after a clean import. */
+  importError: string | null;
   /** 5.6 deep-scan toggle + first-use modal. */
   deepOn: boolean;
   deepWarningDismissed: boolean;
@@ -136,6 +148,8 @@ const state: PanelState = {
   suggestions: [],
   suggestError: null,
   discoverError: null,
+  filterError: null,
+  importError: null,
   deepOn: false,
   deepWarningDismissed: false,
   deepModalOpen: false,
@@ -210,6 +224,9 @@ function buildFilters(
 
 async function pushFilters(): Promise<void> {
   if (state.activeTabId === null) return;
+  // A fresh push supersedes the last per-filter rejection; content re-emits
+  // filterError during its recompute if a filter is still bad.
+  state.filterError = null;
   const filters = buildFilters(state.schema, state.phrases, state.polarity, state.numeric);
   try {
     await sendToContent(state.activeTabId, {
@@ -584,12 +601,36 @@ async function handleImportFilters(file: File): Promise<void> {
     const text = await file.text();
     env = parseExport(text);
   } catch (err) {
-    console.error('[sieve] import failed:', err);
+    state.importError = err instanceof Error ? err.message : String(err);
+    render();
     return;
   }
+  // parseExport only checks the envelope; each filter row still needs the
+  // same shape validation the boot read runs — saveFilters() writes blind.
+  // storage.sync rejections (8 KB/item, 100 KB total quota) surface per set
+  // instead of silently truncating the import.
+  const result: FilterImportResult = { setsImported: 0, filtersImported: 0, warnings: [] };
   for (const [fp, set] of Object.entries(env.sets)) {
-    await saveFilters(fp, set);
+    const valid = set.filter(isFilterShape);
+    if (valid.length < set.length) {
+      result.warnings.push(`${fp}: dropped ${set.length - valid.length} malformed filter(s)`);
+    }
+    if (valid.length === 0) continue;
+    try {
+      await saveFilters(fp, valid);
+      result.setsImported += 1;
+      result.filtersImported += valid.length;
+    } catch (err) {
+      result.warnings.push(
+        `${fp}: save failed — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
+  state.importError = result.warnings.length > 0 ? result.warnings.join('; ') : null;
+  console.log(
+    `[sieve] import: ${result.filtersImported} filter(s) across ${result.setsImported} set(s)` +
+      (result.warnings.length > 0 ? `; ${result.warnings.length} warning(s)` : ''),
+  );
   // Refresh in case the active fingerprint was imported.
   void refresh();
 }
@@ -623,6 +664,17 @@ function endpointOriginPattern(s: LlmSettings): string | null {
 }
 
 async function handleSaveLlmSettings(next: LlmSettings): Promise<void> {
+  // Refuse to persist an insecure proxy URL: the provider call ships the
+  // API key in two headers, so an http:// base would broadcast it in
+  // cleartext. llm.ts re-checks at call time; this is the user-facing gate.
+  if (next.baseUrl !== undefined && next.baseUrl.trim() !== '') {
+    const issue = baseUrlIssue(next.baseUrl.trim());
+    if (issue !== null) {
+      state.discoverError = `LLM settings not saved: ${issue}.`;
+      render();
+      return;
+    }
+  }
   // Request host permission for the provider endpoint FIRST, while the Save
   // click's user gesture is still active (chrome.permissions.request requires
   // one). Without this grant the SW fetch to e.g. openrouter.ai fails with
@@ -701,6 +753,10 @@ function render(): void {
     renderPageStatus(pageHost, {
       schema: state.schema,
       itemCount: state.items.length,
+      // The hint only reaches a model on the LLM discovery path; gate the
+      // hint input on a configured key so it never silently drops the text.
+      llmConfigured:
+        state.llmSettings !== null && state.llmSettings.apiKey.trim() !== '',
       // Slice 3.5 + production wire-up: send rediscover to content,
       // which runs detect/distill/fetchSchema via SW and emits the
       // resulting pageDetected (or discoverError) push.
@@ -769,6 +825,12 @@ function render(): void {
   if (state.discoverError) {
     errors.push({ kind: 'llm-error', message: state.discoverError });
   }
+  if (state.filterError) {
+    errors.push({ kind: 'unsafe-regex', message: state.filterError });
+  }
+  if (state.importError) {
+    errors.push({ kind: 'import-error', message: state.importError });
+  }
   const errorHost = document.getElementById('error-panel');
   if (errorHost) renderErrorPanel(errorHost, { errors });
 
@@ -807,8 +869,14 @@ function render(): void {
 
 // --- Content → panel pushes ------------------------------------------------
 
-chrome.runtime.onMessage.addListener((raw: unknown, _sender, _sendResponse) => {
+chrome.runtime.onMessage.addListener((raw: unknown, sender, _sendResponse) => {
   if (!isContentToPanel(raw)) return false;
+  // With the extension enabled on two tabs, both content scripts push here.
+  // Only the active tab may drive the panel — a background tab's itemStates
+  // would overwrite the HIDDEN list and item counts for the tab the user is
+  // actually looking at (same per-tab discipline as the SW's badge handler).
+  const senderTabId = sender.tab?.id;
+  if (senderTabId !== undefined && senderTabId !== state.activeTabId) return false;
   switch (raw.t) {
     case 'itemStates':
       state.items = raw.items;
@@ -826,6 +894,10 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, _sendResponse) => {
       render();
       break;
     }
+    case 'filterError':
+      state.filterError = `Filter "${raw.filterId}" was skipped: ${raw.message}`;
+      render();
+      break;
   }
   return false;
 });
@@ -837,7 +909,10 @@ void refresh();
 chrome.tabs.onActivated.addListener(() => {
   void refresh();
 });
-chrome.tabs.onUpdated.addListener((_id, info) => {
+chrome.tabs.onUpdated.addListener((id, info) => {
+  // Every tab in every window fires here; a full refresh() is a content
+  // round-trip + four storage reads, so only the active tab earns one.
+  if (id !== state.activeTabId) return;
   if (info.status === 'complete' || info.url !== undefined) {
     void refresh();
   }

@@ -137,7 +137,7 @@ export const chromeQueueIO: QueueIO = {
  *  simulate "SW death" by reusing the same underlying Map across queue
  *  instances. */
 export function memoryQueueIO(initial: readonly QueueItem[] = []): QueueIO {
-  let store: QueueItem[] = [...initial];
+  let store: QueueItem[] = [...initial];  
   return {
     async load() {
       return [...store];
@@ -146,6 +146,20 @@ export function memoryQueueIO(initial: readonly QueueItem[] = []): QueueIO {
       store = [...items];
     },
   };
+}
+
+// Every mutation below is load-then-save against the same storage key, and
+// two drains CAN overlap inside one SW life (alarm tick + message-triggered)
+// — unserialized, both checkouts read the same pending item and process it
+// twice. chrome.storage has no compare-and-swap, so serialize all mutations
+// through one module-level promise chain. (Two SW processes never coexist,
+// so a module-level lock is sufficient.)
+let queueChain: Promise<unknown> = Promise.resolve();
+
+function withQueueLock<T>(fn: () => Promise<T>): Promise<T> { 
+  const run = queueChain.then(fn, fn);
+  queueChain = run.catch(() => undefined);
+  return run;
 }
 
 /** The PersistentQueue is the live surface — instances are cheap, and
@@ -160,57 +174,67 @@ export class PersistentQueue {
   /** Init: revive in-flight → pending so a mid-drain crash doesn't
    *  strand items. Call once on SW startup. */
   async init(): Promise<void> {
-    const items = await this.io.load();
-    const revived = reviveInFlight(items);
-    if (revived.some((r, i) => r !== items[i])) await this.io.save(revived);
+    return withQueueLock(async () => {
+      const items = await this.io.load();
+      const revived = reviveInFlight(items);
+      if (revived.some((r, i) => r !== items[i])) await this.io.save(revived);
+    });
   }
 
   async enqueue(
     batch: ReadonlyArray<Pick<QueueItem, 'fingerprint' | 'itemUrl'>>,
   ): Promise<void> {
-    const items = await this.io.load();
-    const merged = mergeEnqueue(items, batch, this.now());
-    if (merged.length !== items.length) await this.io.save(merged);
+    return withQueueLock(async () => {
+      const items = await this.io.load();
+      const merged = mergeEnqueue(items, batch, this.now());
+      if (merged.length !== items.length) await this.io.save(merged);
+    });
   }
 
   /** Pop the oldest pending item and mark it in-flight. Returns null
    *  when nothing's pending. Caller must call `markDone` or
    *  `markFailed` to settle. */
   async checkout(): Promise<QueueItem | null> {
-    const items = await this.io.load();
-    const next = nextPending(items);
-    if (!next) return null;
-    const key = keyOf(next);
-    const updated = markStatus(items, key, {
-      status: 'in-flight',
-      attempts: next.attempts + 1,
+    return withQueueLock(async () => {
+      const items = await this.io.load();
+      const next = nextPending(items);
+      if (!next) return null;
+      const key = keyOf(next);
+      const updated = markStatus(items, key, {
+        status: 'in-flight',
+        attempts: next.attempts + 1,
+      });
+      await this.io.save(updated);
+      return { ...next, status: 'in-flight' as const, attempts: next.attempts + 1 };
     });
-    await this.io.save(updated);
-    return { ...next, status: 'in-flight', attempts: next.attempts + 1 };
   }
 
   async markDone(item: Pick<QueueItem, 'fingerprint' | 'itemUrl'>): Promise<void> {
-    const items = await this.io.load();
-    const updated = markStatus(items, keyOf(item), { status: 'done' });
-    await this.io.save(updated);
+    return withQueueLock(async () => {
+      const items = await this.io.load();
+      const updated = markStatus(items, keyOf(item), { status: 'done' });
+      await this.io.save(updated);
+    });
   }
 
   async markFailed(
     item: Pick<QueueItem, 'fingerprint' | 'itemUrl'>,
     error: string,
   ): Promise<void> {
-    const items = await this.io.load();
-    const target = items.find((i) => keyOf(i) === keyOf(item));
-    if (!target) return;
-    // Items that have hit MAX_ATTEMPTS stay failed; otherwise they
-    // bounce back to pending so the next drain retries them.
-    const nextStatus: QueueStatus =
-      target.attempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
-    const updated = markStatus(items, keyOf(item), {
-      status: nextStatus,
-      lastError: error.slice(0, 200),
+    return withQueueLock(async () => {
+      const items = await this.io.load();
+      const target = items.find((i) => keyOf(i) === keyOf(item));
+      if (!target) return;
+      // Items that have hit MAX_ATTEMPTS stay failed; otherwise they
+      // bounce back to pending so the next drain retries them.
+      const nextStatus: QueueStatus =
+        target.attempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
+      const updated = markStatus(items, keyOf(item), {
+        status: nextStatus,
+        lastError: error.slice(0, 200),
+      });
+      await this.io.save(updated);
     });
-    await this.io.save(updated);
   }
 
   async snapshot(): Promise<QueueItem[]> {
@@ -224,16 +248,22 @@ export class PersistentQueue {
 
 // ---- Alarm heartbeat ------------------------------------------------------
 
-/** Install the heartbeat alarm. Idempotent — calling repeatedly is a
- *  no-op. The SW's onAlarm listener calls `onTick` (typically drains a
- *  bounded number of items). */
+let heartbeatListener: ((alarm: chrome.alarms.Alarm) => void) | null = null;
+
+/** Install the heartbeat alarm. Idempotent — a repeat call replaces the
+ *  previous onAlarm listener instead of stacking a second one (two
+ *  installs in one SW life used to make every tick drain twice). */
 export async function installHeartbeat(
   onTick: () => Promise<void>,
 ): Promise<void> {
-  chrome.alarms.onAlarm.addListener((alarm) => {
+  if (heartbeatListener !== null) {
+    chrome.alarms.onAlarm.removeListener(heartbeatListener);
+  }
+  heartbeatListener = (alarm) => {
     if (alarm.name !== ALARM_NAME) return;
     void onTick();
-  });
+  };
+  chrome.alarms.onAlarm.addListener(heartbeatListener);
   const existing = await chrome.alarms.get(ALARM_NAME);
   if (!existing) {
     await chrome.alarms.create(ALARM_NAME, {

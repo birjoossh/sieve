@@ -29,6 +29,11 @@ export interface PageStatusState {
   /** Optional: when wired, a "Re-discover" button + hint input render
    *  beneath the status line. Click → onRediscover({ hint, force: true }). */
   onRediscover?: (payload: RediscoverPayload) => void;
+  /** Whether a provider key is configured. The hint is only honored on the
+   *  LLM discovery path; without a key, Re-discover falls back to local
+   *  heuristic detection and the hint is silently dropped. We disable the
+   *  hint input + say so rather than letting the user type into the void. */
+  llmConfigured?: boolean;
 }
 
 export function renderPageStatus(host: HTMLElement, state: PageStatusState): void {
@@ -53,6 +58,9 @@ export function renderPageStatus(host: HTMLElement, state: PageStatusState): voi
 
   if (state.onRediscover) {
     const rediscoverHandler = state.onRediscover;
+    // Default true so callers that don't yet pass the flag keep the old
+    // (hint-enabled) behavior; the panel always passes it explicitly.
+    const llmConfigured = state.llmConfigured ?? true;
     const rediscover = document.createElement('div');
     rediscover.className = 'rediscover';
     rediscover.dataset['role'] = 'rediscover';
@@ -70,9 +78,17 @@ export function renderPageStatus(host: HTMLElement, state: PageStatusState): voi
     const hintInput = document.createElement('input');
     hintInput.type = 'text';
     hintInput.dataset['input'] = 'rediscover-hint';
-    hintInput.placeholder = 'e.g. “title is in the h3”';
     hintInput.className = 'rediscover-hint input';
     hintInput.setAttribute('aria-label', 'Re-discover hint');
+    if (llmConfigured) {
+      hintInput.placeholder = 'e.g. “title is in the h3”';
+    } else {
+      // No key → the hint can't reach a model, so don't invite one. The
+      // button still works (local re-detect); only the hint is gated.
+      hintInput.disabled = true;
+      hintInput.placeholder = 'Hint needs an LLM key';
+      hintInput.title = 'Add a provider key under “LLM provider” to use detection hints.';
+    }
     row.appendChild(hintInput);
 
     const btn = document.createElement('button');
@@ -83,12 +99,23 @@ export function renderPageStatus(host: HTMLElement, state: PageStatusState): voi
     btn.addEventListener('click', () => {
       const hint = hintInput.value.trim();
       const payload: RediscoverPayload = { force: true };
-      if (hint !== '') payload.hint = hint;
+      // Only forward a hint when a model can actually consume it.
+      if (hint !== '' && llmConfigured) payload.hint = hint;
       rediscoverHandler(payload);
     });
     row.appendChild(btn);
 
     rediscover.appendChild(row);
+
+    if (!llmConfigured) {
+      const note = document.createElement('p');
+      note.className = 'hint hint-muted';
+      note.dataset['role'] = 'hint-needs-llm';
+      note.textContent =
+        'Layout hints need an LLM key (set one under “LLM provider”). Re-discover still re-runs local detection without one.';
+      rediscover.appendChild(note);
+    }
+
     host.appendChild(rediscover);
   }
 }

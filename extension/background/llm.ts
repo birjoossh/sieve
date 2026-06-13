@@ -45,6 +45,7 @@
 // distilled output for cache de-dupe.
 
 import type { FieldKind, FieldSpec, LayoutKind, Schema } from '../shared/types.js';
+import { baseUrlIssue } from '../shared/settings.js';
 import { SpendCapError, type SpendChecker } from './spend.js';
 
 const NON_CONTENT_TAGS = new Set([
@@ -372,12 +373,36 @@ function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
+/** The API key rides in the request headers (twice, for gateway compat) —
+ *  a user-typed http:// proxy URL would ship it in cleartext. The panel
+ *  refuses to save one, but settings can predate the check or arrive via
+ *  imported state, so the call site enforces it again. */
+function resolveBase(opts: DiscoverOpts, fallback: string): string {
+  const base = opts.baseUrl ?? fallback;
+  const issue = baseUrlIssue(base);
+  if (issue !== null) {
+    throw new SchemaParseError(`LLM base URL rejected: ${issue}`);
+  }
+  return base;
+}
+
+/** Map a provider HTTP failure to a short, known reason. The raw body is
+ *  preserved on SchemaParseError.raw for debugging, but never reaches the
+ *  panel's error rows — provider errors can echo request fragments. */
+function providerErrorReason(status: number): string {
+  if (status === 401 || status === 403) return 'authentication failed — check the API key';
+  if (status === 404) return 'endpoint not found — check the base URL and model';
+  if (status === 429) return 'rate limited by the provider — retry shortly';
+  if (status >= 500) return 'provider error — retry shortly';
+  return 'request rejected by the provider';
+}
+
 async function callAnthropic(
   prompt: string,
   opts: DiscoverOpts,
   fetcher: typeof fetch,
 ): Promise<ProviderResult> {
-  const base = opts.baseUrl ?? 'https://api.anthropic.com';
+  const base = resolveBase(opts, 'https://api.anthropic.com');
   // OpenRouter + LiteLLM accept Bearer auth even on the Anthropic
   // shape; the upstream Anthropic API uses x-api-key. We send both so
   // callers don't have to think about it — gateways that don't
@@ -399,7 +424,7 @@ async function callAnthropic(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new SchemaParseError(`Anthropic ${res.status}: ${body.slice(0, 200)}`, body);
+    throw new SchemaParseError(`Anthropic ${res.status}: ${providerErrorReason(res.status)}`, body);
   }
   const json = (await res.json()) as { content?: Array<{ type?: string; text?: string }> };
   const text = (json.content ?? [])
@@ -417,7 +442,7 @@ async function callOpenAI(
   opts: DiscoverOpts,
   fetcher: typeof fetch,
 ): Promise<ProviderResult> {
-  const base = opts.baseUrl ?? 'https://api.openai.com';
+  const base = resolveBase(opts, 'https://api.openai.com');
   const res = await fetcher(joinUrl(base, '/v1/chat/completions'), {
     method: 'POST',
     headers: {
@@ -431,7 +456,7 @@ async function callOpenAI(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new SchemaParseError(`OpenAI ${res.status}: ${body.slice(0, 200)}`, body);
+    throw new SchemaParseError(`OpenAI ${res.status}: ${providerErrorReason(res.status)}`, body);
   }
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;

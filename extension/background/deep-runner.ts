@@ -39,6 +39,10 @@ export interface DeepRunnerOpts {
    *  runner gives up and rejects so the queue can mark failed and
    *  retry. Default 15s. */
   timeoutMs?: number;
+  /** When set, the detail URL must be on this origin (the list page's).
+   *  Queue items derive from page DOM — a hidden tab must not be
+   *  steerable to an arbitrary site. */
+  allowedOrigin?: string;
   now?: () => number;
 }
 
@@ -57,28 +61,39 @@ function chromeTabsLike(): TabsLike {
   };
 }
 
-function defaultAwaitDetail(tabId: number): Promise<Record<string, string>> {
-  return new Promise((resolveOuter, reject) => {
-    // Listener cleans itself up on the first matching message.
-    const listener = (
-      raw: unknown,
-      sender: chrome.runtime.MessageSender,
-    ): false => {
+interface DetailAwaiter {
+  promise: Promise<Record<string, string>>;
+  /** Detach the message listener. Must run when the timeout wins the
+   *  race: a leaked listener accumulates one per timed-out run, and a
+   *  LATE detailReady from a recycled tabId would resolve the wrong
+   *  item's fields. Safe to call after normal resolution too. */
+  cancel: () => void;
+}
+
+function defaultAwaitDetail(tabId: number): DetailAwaiter {
+  let listener: ((raw: unknown, sender: chrome.runtime.MessageSender) => false) | null = null;
+  const promise = new Promise<Record<string, string>>((resolveOuter, reject) => {
+    listener = (raw, sender): false => {
       if (sender.tab?.id !== tabId) return false;
       if (typeof raw !== 'object' || raw === null) return false;
       const r = raw as Record<string, unknown>;
       if (r['t'] !== 'detailReady') return false;
+      if (listener !== null) chrome.runtime.onMessage.removeListener(listener);
       if (typeof r['fields'] !== 'object' || r['fields'] === null) {
-        chrome.runtime.onMessage.removeListener(listener);
         reject(new Error('detailReady missing fields'));
         return false;
       }
-      chrome.runtime.onMessage.removeListener(listener);
       resolveOuter(r['fields'] as Record<string, string>);
       return false;
     };
     chrome.runtime.onMessage.addListener(listener);
   });
+  return {
+    promise,
+    cancel: () => {
+      if (listener !== null) chrome.runtime.onMessage.removeListener(listener);
+    },
+  };
 }
 
 export async function runOne(
@@ -86,9 +101,26 @@ export async function runOne(
   opts: DeepRunnerOpts = {},
 ): Promise<DetailRecord> {
   const tabs = opts.tabs ?? chromeTabsLike();
-  const awaitDetail = opts.awaitDetail ?? defaultAwaitDetail;
   const timeout = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const now = opts.now ?? Date.now;
+
+  // Queue items derive from page DOM — never open a hidden tab on a
+  // non-web scheme (chrome://, file:, javascript:) or, when the caller
+  // pins an origin, off the list page's own site.
+  let parsed: URL;
+  try {
+    parsed = new URL(itemUrl);
+  } catch {
+    throw new Error(`deep-runner: invalid detail URL: ${itemUrl}`);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`deep-runner: refusing non-http(s) detail URL: ${itemUrl}`);
+  }
+  if (opts.allowedOrigin !== undefined && parsed.origin !== opts.allowedOrigin) {
+    throw new Error(
+      `deep-runner: detail URL origin ${parsed.origin} is outside ${opts.allowedOrigin}`,
+    );
+  }
 
   const start = now();
   const tab = await tabs.create({ url: itemUrl, active: false });
@@ -96,6 +128,10 @@ export async function runOne(
     throw new Error('chrome.tabs.create returned a tab without an id');
   }
   const tabId = tab.id;
+
+  const awaiter: DetailAwaiter = opts.awaitDetail
+    ? { promise: opts.awaitDetail(tabId), cancel: () => undefined }
+    : defaultAwaitDetail(tabId);
 
   // race(awaitDetail, timeout)
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -107,8 +143,9 @@ export async function runOne(
 
   let fields: Record<string, string>;
   try {
-    fields = await Promise.race([awaitDetail(tabId), timeoutPromise]);
+    fields = await Promise.race([awaiter.promise, timeoutPromise]);
   } finally {
+    awaiter.cancel();
     if (timer !== null) clearTimeout(timer);
     // Always close the tab — leaving hidden tabs around is a UX bug
     // and a memory leak. tabs.remove swallows a non-existent id (the

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Late hydration fixture</title>
+  </head>
+  <body>
+    <!-- Mimics a client-rendered SPA: the document_end DOM has no list; the
+         job cards are injected ~1.2s later, the way React hydrates LinkedIn
+         after the content script has already run. The `.joblist` shape matches
+         the rolecast stub, so once it appears the content script's
+         observer-first detection should mount + filter it promptly — not wait
+         out a fixed back-off. -->
+    <div id="root"><p>loading…</p></div>
+    <script>
+      setTimeout(function () {
+        var root = document.getElementById('root');
+        var list = document.createElement('main');
+        list.className = 'joblist';
+        for (var i = 0; i < 6; i++) {
+          var card = document.createElement('article');
+          card.className = 'job';
+          var title = document.createElement('h2');
+          title.className = 'title';
+          title.textContent = 'Role ' + i;
+          var snippet = document.createElement('p');
+          snippet.className = 'snippet';
+          snippet.textContent = i % 2 === 1 ? 'needs Mandarin' : 'remote, English';
+          card.appendChild(title);
+          card.appendChild(snippet);
+          list.appendChild(card);
+        }
+        root.appendChild(list);
+        window.__listInjectedAt = Date.now();
+      }, 1200);
+    </script>
+  </body>
+</html>

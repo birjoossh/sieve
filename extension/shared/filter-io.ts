@@ -10,9 +10,9 @@
 //
 //   { v: 1, exportedAt: <ms>, sets: { "<fp>": Filter[] } }
 //
-// We don't ship per-filter validation here — the panel routes
-// imports back through saveFilters() which runs the same shape
-// validation as the boot read in shared/saved-filters.ts.
+// Per-filter validation happens in the panel's import handler via
+// isFilterShape (shared/saved-filters.ts) BEFORE saveFilters() writes —
+// saveFilters itself validates nothing; only the boot *read* path does.
 
 import type { Filter } from './types.js';
 

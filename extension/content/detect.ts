@@ -93,10 +93,43 @@ interface Candidate {
   score: number;
 }
 
+/** Per-call descendant-count memo. detect() used to call
+ *  `getElementsByTagName('*').length` per child per parent — Σ(subtree
+ *  sizes) ≈ O(n × depth) — and it re-runs up to 3 seeded times plus once
+ *  per mutation batch for 60s on undetected pages: real jank on 10k+-node
+ *  SPAs. One post-order pass computes every count in O(n). Non-content
+ *  subtrees are excluded (the old per-element count included them; the
+ *  scoring is no worse for ignoring script/style nodes). */
+type DescendantCounts = Map<Element, number>;
+
+function computeDescendantCounts(root: Element): DescendantCounts {
+  const counts: DescendantCounts = new Map();
+  // Iterative post-order: push unvisited, re-push as visited, children first.
+  const stack: Array<[Element, boolean]> = [[root, false]];
+  while (stack.length > 0) {
+    const [node, visited] = stack.pop()!;
+    if (NON_CONTENT_TAGS.has(node.tagName)) continue;
+    if (!visited) {
+      stack.push([node, true]);
+      for (const child of Array.from(node.children)) {
+        if (!NON_CONTENT_TAGS.has(child.tagName)) stack.push([child, false]);
+      }
+    } else {
+      let total = 0;
+      for (const child of Array.from(node.children)) {
+        if (NON_CONTENT_TAGS.has(child.tagName)) continue;
+        total += 1 + (counts.get(child) ?? 0);
+      }
+      counts.set(node, total);
+    }
+  }
+  return counts;
+}
+
 /** Best candidate for one parent Element — the largest qualifying
  *  signature-group amongst its children. Null when no group meets the
  *  minimum size. */
-function evaluateParent(parent: Element): Candidate | null {
+function evaluateParent(parent: Element, counts: DescendantCounts): Candidate | null {
   const children = elementChildren(parent);
   if (children.length < MIN_GROUP_SIZE) return null;
 
@@ -114,7 +147,7 @@ function evaluateParent(parent: Element): Candidate | null {
     // Mean descendant count across the group — element descendants only,
     // text nodes are not part of the structural shape we care about.
     let total = 0;
-    for (const el of group) total += el.getElementsByTagName('*').length;
+    for (const el of group) total += counts.get(el) ?? 0;
     const meanDescendants = total / group.length;
     const score = group.length * Math.min(meanDescendants, DESCENDANT_CAP);
     if (!best || score > best.score) {
@@ -128,7 +161,7 @@ function evaluateParent(parent: Element): Candidate | null {
   // grouping by tag name alone. Only triggers when class-grouping found
   // nothing — so clean fixtures, where a class-group already wins, are
   // unaffected and never regress.
-  if (!best) best = evaluateParentByTag(parent, children);
+  if (!best) best = evaluateParentByTag(parent, children, counts);
   return best;
 }
 
@@ -137,7 +170,11 @@ function evaluateParent(parent: Element): Candidate | null {
  *  descendants) picks the richest cluster. Used only when stable-class
  *  grouping yields nothing, so it can rescue lists whose per-item class
  *  noise defeats the pattern filter without affecting normal pages. */
-function evaluateParentByTag(parent: Element, children: Element[]): Candidate | null {
+function evaluateParentByTag(
+  parent: Element,
+  children: Element[],
+  counts: DescendantCounts,
+): Candidate | null {
   const groups = new Map<string, Element[]>();
   for (const child of children) {
     const list = groups.get(child.tagName);
@@ -149,7 +186,7 @@ function evaluateParentByTag(parent: Element, children: Element[]): Candidate | 
   for (const [tag, group] of groups) {
     if (group.length < MIN_GROUP_SIZE) continue;
     let total = 0;
-    for (const el of group) total += el.getElementsByTagName('*').length;
+    for (const el of group) total += counts.get(el) ?? 0;
     const meanDescendants = total / group.length;
     const score = group.length * Math.min(meanDescendants, DESCENDANT_CAP);
     if (!best || score > best.score) {
@@ -200,6 +237,9 @@ export function detect(root: Document | Element): Element | null {
   const startEl: Element = root instanceof Document ? root.documentElement : root;
   if (!startEl) return null;
 
+  // Subtree sizes computed once for the whole walk — see DescendantCounts.
+  const counts = computeDescendantCounts(startEl);
+
   let best: Candidate | null = null;
 
   // Iterative walk (avoid recursion for very deep DOMs). Skip non-content
@@ -209,7 +249,7 @@ export function detect(root: Document | Element): Element | null {
     const node = stack.pop()!;
     if (NON_CONTENT_TAGS.has(node.tagName)) continue;
 
-    const cand = evaluateParent(node);
+    const cand = evaluateParent(node, counts);
     if (cand && (!best || cand.score > best.score)) best = cand;
 
     for (const child of Array.from(node.children)) {
@@ -377,8 +417,14 @@ export function localizeItemSet(
   // LOSES cards. Never prefer the leaf for matching MORE — a generic leaf
   // like `div` matches the whole page (seen live on github.com search:
   // bare `div` → 212 "items" including header decorations).
+  //
+  // The reported `count` is always measured WITHIN the container: findItems
+  // re-scopes a bare-leaf selector via bestRoot anyway, and discover.ts
+  // compares this count against the LLM selector's — a document-wide leaf
+  // count (lookalikes outside the container) made an over-broad local
+  // selector beat a correct LLM one.
   const scopedCount = safeCount(doc, scoped);
-  const leafCount = safeCount(doc, leaf);
+  const leafCount = safeCount(itemSet, leaf);
   let itemSelector: string;
   let count: number;
   if (scopedCount >= modal.count) {
@@ -393,9 +439,9 @@ export function localizeItemSet(
 }
 
 /** querySelectorAll length that never throws on a malformed selector. */
-function safeCount(doc: Document, selector: string): number {
+function safeCount(root: ParentNode, selector: string): number {
   try {
-    return doc.querySelectorAll(selector).length;
+    return root.querySelectorAll(selector).length;
   } catch {
     return 0;
   }

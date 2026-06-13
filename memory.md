@@ -5,6 +5,140 @@ finding worth saving the next session a re-derivation goes here.
 
 ---
 
+## 2026-06-13 (perf fix) · inject at document_end + observer-first detection — filter cards as they load instead of waiting for window 'load'
+
+The content script registered at `document_idle`, which Chrome injects only
+after the window `load` event — and on a cold LinkedIn load `load` fires ~3.5s
+in, long after the 25 job cards are already in the DOM (measured: `init:start`
+@3451ms cold with items:25 already present). So we sat idle while the list was
+sitting there filterable.
+
+Two coupled changes:
+- sw.ts `registerForOrigin`: `runAt: 'document_idle'` → `'document_end'`
+  (DOMContentLoaded). Live: cold `init:start` dropped ~3.5s → ~2.3s.
+- index.ts `tryDiscover`: removed the cumulative seeded `[0,1s,3s]` retry loop
+  (attempts fired at 0/1s/4s — a list hydrating between 1-4s waited until 4s).
+  Now: one immediate attempt, then install the discover MutationObserver
+  RIGHT AWAY, so the list is caught the instant its first cards land and the
+  per-item MutationWatcher filters the rest incrementally. installDiscoverWatcher
+  observes `document.body ?? document.documentElement` (body present at
+  document_end; defensive fallback).
+
+Note: nothing asserts runAt in code — it's the single value at sw.ts:110
+(test/comment refs are stale prose, harmless). Regression guard:
+fixtures/late-hydration.html injects a `.joblist` ~1.2s post-load; 4.17 asserts
+detection < 3.5s (the old seeded path wouldn't retry until ~4s → would fail)
+and that the late list is filterable. Full suite 157.
+
+## 2026-06-13 (perf fix) · the post-load filter "re-settle" was a redundant renderer rebuild on every ?currentJobId change; mount() is now idempotent
+
+Instrumented the pipeline (gated `tlog()` in content/index.ts, enable via
+`localStorage 'nf-timing'='1'`; logs `[sieve-timing] <event> @<ms>` on one
+monotonic clock). Live measurement on the v2 search-results page, saved
+filters pre-seeded:
+
+  @2300ms init:start            ← document_idle (LinkedIn hydration; SITE time)
+  @2302ms mount:items {items:25}
+  @2311ms hydrateSavedFilters {filtered:2}   ← filters applied; OUR work = 11ms
+  @2486/@3158ms spaUrlChange:queued          ← LinkedIn rewrites URL twice
+  @4358ms spaUrlChange:fire-rediscover (1200ms debounce)
+  @4359ms mount:start  ← FULL teardown + rebuild, for nothing
+
+Root cause of the perceived delay: NOT detection (11ms) and NOT the
+`chrome-extension://invalid` flood (LinkedIn's, see below). It was mount()
+unconditionally tearing down + rebuilding the renderer on SPA route changes —
+and LinkedIn changes the URL on EVERY job click (`?currentJobId=…`), so the
+whole renderer was rebuilt on every interaction, ~2s after the page settled.
+
+Fix: mount() now early-returns when `ctx.itemSet === itemSet && itemSet
+.isConnected && same fingerprint` (no-op re-detect). The MutationWatcher
+already tracks card changes, so skipping the rebuild is safe; a real new
+search REPLACES the container element → identity check fails → rebuild as
+before. The panel's explicit Re-discover passes `forceRemount` (threaded from
+`attemptDiscover` via `opts.bypassStub === true`) to always rebuild. Regression
+guard in tests/4.11: tag `.filt` wrappers, pushState, assert all 3 survive
+(a rebuild would recreate them untagged). Full suite green (155).
+
+Latent, NOT yet fixed: the discover retry delays are cumulative [0,1s,4s] and
+the responsive MutationObserver only installs AFTER they exhaust at 4s — a list
+hydrating between 1-4s stalls to the 4s mark. Didn't bite here (stub matched at
+document_idle) but worth doing: install the observer immediately.
+
+## 2026-06-12 (live debug) · LinkedIn's `chrome-extension://invalid` console flood is NOT ours; current build's filter path is ms-fast on the real collections page
+
+User reported "a barrage of errors" + "slow filter application" on
+`/jobs/collections/recommended/?…&start=48`. Verified live (headed Chromium,
+dist build, logged-in profile at `~/.cache/nf-tests/linkedin-userdata`):
+
+- The flood is `GET chrome-extension://invalid/ — net::ERR_FAILED` at
+  ~8-10/sec, initiated by LINKEDIN'S OWN aero-v1 script (CDP initiator
+  stack shows only licdn frames, line 12053 — their wrapped `window.fetch`).
+  Chrome masks blocked/unknown extension-resource fetches as
+  `chrome-extension://invalid` — this is LinkedIn probing extension
+  resources (anti-scraper detection), unrelated to Negative Filter. Do
+  not chase it again.
+- CONFIRMED on v2 too (2026-06-13, `/jobs/search-results/`, the
+  `site:linkedin:jobs:v2` detached stub, 25 items / 17 filtered). A
+  4-condition within-session isolation: (A) ext UNREGISTERED = 8.3/s,
+  (B) mounted no filters = 8.4/s, (C) phrase filter = 9.7/s, (D) user's
+  3 phrases = 9.7/s. The flood is there at ~8/s even fully unregistered,
+  and our content script injects ZERO chrome-extension:// URLs into the
+  page DOM (`domLeak.count: 0`) — nothing of ours for LinkedIn to probe.
+  WATCH OUT: a single earlier reading showed "0 without extension" — that
+  was a ramp-up timing artifact right after a reload, NOT evidence we
+  cause it. Five measurements total; only that one was 0. Their probe
+  rate is variable/session-dependent; don't read one window as causal.
+- Performance verdict on v2 with the extension ACTIVE + filters applied:
+  0 PerformanceObserver long tasks, event-loop lag p95 4ms (vs 1ms
+  ext-off), 30fps (== ext-off). Our code does not slow the page. The
+  user's perceived "slow response" is DevTools itself rendering 1000+
+  red error rows (1163 issues), which makes the DevTools UI sluggish —
+  closing DevTools or filtering `-invalid` in the Network box restores it.
+- Filter path on today's build, measured on the live page: mount 2.3s
+  after nav (document_idle fires pre-hydration → "no stub matched" log →
+  retry loop lands the legacy stub `site:linkedin:jobs:v1`), setFilters
+  round-trip 6ms, first card hidden in 10ms, zero PerformanceObserver
+  longtasks, jobs-guest description fetches all 2xx. Zero console errors
+  from our origin across the whole session.
+- Page-3 trivia: `start=48` on a 52-result collection has only 4 jobs —
+  `items: 4` is correct, not a detection miss.
+- If a user reports slowness on an INSTALLED build, first ask whether it
+  predates the 2026-06-12 perf fixes (per-item regex recompile, O(n×depth)
+  detect rescoring) — reload the unpacked/packed extension before
+  debugging live.
+- Harness for this kind of session: /tmp/nf-live-debug.mjs — loads dist/
+  with <all_urls> baked in, persistent logged-in profile, streams console
+  to /tmp/nf-live-console.log, and executes /tmp/nf-live-cmd.js on mtime
+  change with {context, sw, page} (poor man's REPL). Google SSO fails in
+  automation; use the LinkedIn email+password form.
+
+## 2026-06-12 (audit) · todo.md fix round: privilege-gating by sender ORIGIN, not sender.tab; local-day spend epochs make specs TZ-sensitive
+
+Gating privileged SW messages (`enableDomain`/`disableDomain`) on
+`sender.tab === undefined` looked right but broke 19 integration specs:
+the test harness opens `panel.html` as a regular tab, and ANY extension
+page loaded in a tab gets `sender.tab` set — same for users who open the
+panel URL directly. The correct boundary is "our extension origin vs a
+content script in a web page": `sender.origin ===
+chrome-extension://<runtime.id>` (URL-prefix fallback). Content scripts
+always report the web page's origin.
+
+Spend epochs are now LOCAL-calendar (rollover at the user's midnight,
+todo.md fix). Anything seeding `nf:spend-ledger` epochs must use
+`Math.floor((now - tzOffsetMin*60000) / DAY)` and
+`getFullYear()*12 + getMonth()` — UTC math drifts a day/month depending
+on the host TZ (4.7 spec bit by this).
+
+Behavior contracts changed deliberately this round (specs updated with
+them): a rejected regex disables only that filter and reports a
+`filterError` push (engine takes an `onFilterError` callback); the 5.7
+checking indicator is the `data-nf-checking` attribute + ::after pseudo —
+no inserted node, so removal is byte-identical; `findItems`/`readField`
+swallow malformed selectors (bad LLM/imported selector = 0 items / field
+absent, never a dead message port). The heal observer only watches
+attributes in detached mode, but keeps the microtask debounce — the 6.7
+gate asserts heal-within-a-tick.
+
 ## 2026-06-12 (later) · Feedback round 2: the Carousell numeric bug was a hardcoded field name, not parsing; grid fixtures assert `.ctile` not `.sliver`; "page detected" sentinel is data-role="page-detected"
 
 The real reason "Price > 4000" never worked on Carousell: panel.ts bound

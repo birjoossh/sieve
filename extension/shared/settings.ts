@@ -29,6 +29,26 @@ export interface LlmSettings {
 
 const STORAGE_KEY = 'nf:llm-settings';
 
+/** Hosts allowed to receive the API key over plain http — local inference
+ *  servers (Ollama, vLLM) don't terminate TLS. Everything else must be
+ *  https: the key rides in TWO headers (x-api-key + Authorization), so a
+ *  cleartext proxy URL would ship it twice in the open. Checked at save
+ *  time (panel) and again at call time (background/llm.ts). */
+const PLAIN_HTTP_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/** Why a custom base URL can't be used, or null when it's acceptable. */
+export function baseUrlIssue(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return `"${raw}" is not a valid URL`;
+  }
+  if (url.protocol === 'https:') return null;
+  if (url.protocol === 'http:' && PLAIN_HTTP_HOSTS.has(url.hostname)) return null;
+  return `base URL must use https:// (http:// is allowed only for localhost / 127.0.0.1)`;
+}
+
 export async function loadLlmSettings(): Promise<LlmSettings | null> {
   const r = await chrome.storage.local.get([STORAGE_KEY]);
   const v = r[STORAGE_KEY];

@@ -13,7 +13,12 @@ locally to your browser profile. Specific keys:
 - `nf:llm-settings` (`chrome.storage.local`) — your chosen LLM
   provider name, optional model override, and the API key you typed
   in. The key is **never transmitted to the developers** and never
-  written to `chrome.storage.sync`.
+  written to `chrome.storage.sync`. It is stored **in plaintext** on
+  your device: MV3 extensions have no access to the OS keychain, so
+  anyone with access to your browser profile directory can read it —
+  use a key you can rotate, and remove it via "Clear" when done.
+  No code path exports `chrome.storage.local` contents; the
+  filter-export feature reads `chrome.storage.sync` (filters) only.
 - `nf:filters:<fingerprint>` (`chrome.storage.sync`) — your saved
   filter sets, indexed by a structural fingerprint of the page
   layout. Synced across your Chrome devices by Google.
@@ -56,7 +61,13 @@ third-party scripts.
 ## Permissions
 
 - `sidePanel` — for the side panel UI.
-- `tabs` — to display the active tab's origin in the panel.
+- `tabs` — two uses: (1) showing the active tab's origin in the panel,
+  and (2) detecting single-page-app navigations (`history.pushState`
+  changes the URL without a page load, which only `tabs.onUpdated`
+  reports) so filters re-apply after an in-site search. The relay
+  checks the tab's origin against your enabled-origins list and
+  ignores every other tab; URLs of tabs you haven't enabled are never
+  acted on or stored.
 - `scripting` — to register the content script on origins you enable.
 - `alarms` — heartbeat for the deep-scan queue.
 - `storage` — for the keys listed above.

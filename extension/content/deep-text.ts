@@ -59,12 +59,24 @@ export function itemDetailUrl(item: Element): string | null {
   if (m) return `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${m[1]}`;
 
   // Generic fallback: the card's first real anchor, resolved absolute.
+  // Hard-restricted to the page's own origin: this fetch fires
+  // AUTOMATICALLY for every rendered card, so a page (or user-generated
+  // content on it) planting cross-origin anchors must never turn the
+  // scanner into a request proxy. Same-origin GETs with action-like query
+  // strings (logout links, "?action=delete" one-clicks, unsubscribe
+  // tokens) are skipped too — a description endpoint doesn't need them,
+  // and firing them silently per card is how state gets mutated. The
+  // LinkedIn jobs-guest endpoint above stays the only cross-path special
+  // case.
   const anchor = item.querySelector('a[href]');
   const href = anchor?.getAttribute('href') ?? '';
   if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
     try {
-      const base = item.ownerDocument?.defaultView?.location.href;
-      return new URL(href, base).toString();
+      const loc = item.ownerDocument?.defaultView?.location;
+      const resolved = new URL(href, loc?.href);
+      if (loc && resolved.origin !== loc.origin) return null;
+      if (ACTION_LIKE_QUERY_RE.test(resolved.search)) return null;
+      return resolved.toString();
     } catch {
       return null;
     }
@@ -72,13 +84,50 @@ export function itemDetailUrl(item: Element): string | null {
   return null;
 }
 
-/** Remove scripts/styles/tags and collapse whitespace so the response can be
- *  substring/regex-matched as plain text. */
+/** Query strings whose mere GET can plausibly change state. Conservative
+ *  by design: a skipped description fetch is a filter miss, never a false
+ *  hide — but a fired logout/delete/unsubscribe link is unrecoverable. */
+const ACTION_LIKE_QUERY_RE =
+  /(?:^|[?&])[^=&]*(?:action|delete|remove|logout|signout|sign-out|unsubscribe|confirm|approve|accept|dismiss|token|csrf)[^=&]*(?:=|&|$)/i;
+
+/** Entities that carry meaning for matching. Blanking them broke phrases
+ *  containing `&` or apostrophes ("AT&amp;T" read as "AT T", "&#39;" as a
+ *  space) — fetched descriptions silently stopped matching those filters. */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+  ndash: '–',
+  mdash: '—',
+  hellip: '…',
+  lsquo: '‘',
+  rsquo: '’',
+  ldquo: '“',
+  rdquo: '”',
+};
+
+function decodeCodePoint(cp: number): string {
+  try {
+    return String.fromCodePoint(cp);
+  } catch {
+    return ' ';
+  }
+}
+
+/** Remove scripts/styles/tags, decode common entities, and collapse
+ *  whitespace so the response can be substring/regex-matched as plain text.
+ *  Tag stripping happens BEFORE entity decoding, so a decoded `&lt;` stays
+ *  a literal character and can't form a fake tag. */
 export function stripHtml(html: string): string {
   return html
     .replace(/<(script|style|template)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/&#(\d+);/g, (_, d: string) => decodeCodePoint(parseInt(d, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => decodeCodePoint(parseInt(h, 16)))
+    .replace(/&([a-z]+);/gi, (_, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -103,7 +152,10 @@ export async function fetchDetailResult(
   fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
 ): Promise<DetailFetchResult> {
   try {
-    const res = await fetcher(url, { credentials: 'include' });
+    // 'same-origin', never 'include': cookies ride only to the origin the
+    // user is already browsing (LinkedIn's jobs-guest endpoint needs them
+    // there); anything cross-origin goes credential-less.
+    const res = await fetcher(url, { credentials: 'same-origin' });
     if (res.status === 429) return { text: null, rateLimited: true };
     if (!res.ok) return { text: null, rateLimited: false };
     const html = await res.text();
@@ -138,6 +190,10 @@ export interface DeepTextScannerOpts {
 }
 
 const sharedTextCache = new Map<string, string>();
+/** LRU bound on cached descriptions: entries run 5–20 KB each (LinkedIn),
+ *  so an unbounded page-lifetime cache leaked tens of MB over an afternoon
+ *  of pagination. ~200 entries covers several pages of cards. */
+const MAX_TEXT_CACHE_ENTRIES = 200;
 /** Shared like the cache and for the same reason: a remount mid-burst gets
  *  a fresh scanner, and instance-level in-flight tracking would let it
  *  re-request URLs the previous scanner already has on the wire. */
@@ -197,7 +253,7 @@ export class DeepTextScanner {
     for (const item of items) {
       const url = itemDetailUrl(item);
       if (!url) continue;
-      const cached = this.cache.get(url);
+      const cached = this.cacheGet(url);
       if (cached !== undefined) {
         this.onText(item, cached);
         continue;
@@ -240,6 +296,25 @@ export class DeepTextScanner {
     }
   }
 
+  /** Read with LRU recency: Map iteration order is insertion order, so
+   *  re-inserting on hit keeps the oldest-used entry first for eviction. */
+  private cacheGet(url: string): string | undefined {
+    const text = this.cache.get(url);
+    if (text !== undefined) {
+      this.cache.delete(url);
+      this.cache.set(url, text);
+    }
+    return text;
+  }
+
+  private cacheSet(url: string, text: string): void {
+    if (!this.cache.has(url) && this.cache.size >= MAX_TEXT_CACHE_ENTRIES) {
+      const oldest = this.cache.keys().next();
+      if (!oldest.done) this.cache.delete(oldest.value);
+    }
+    this.cache.set(url, text);
+  }
+
   private async run(item: Element, url: string): Promise<void> {
     this.active += 1;
     this.inFlight.add(url);
@@ -264,7 +339,7 @@ export class DeepTextScanner {
       } else {
         sharedCooldown.consecutive = 0;
         if (result.text !== null) {
-          this.cache.set(url, result.text);
+          this.cacheSet(url, result.text);
           if (!this.stopped) this.onText(item, result.text);
         }
       }
