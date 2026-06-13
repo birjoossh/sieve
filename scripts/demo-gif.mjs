@@ -88,7 +88,7 @@ async function main() {
   await fixture.bringToFront();
 
   const steps = [];
-  const snap = async (caption, holdMs = 1900) => {
+  const snap = async (caption, holdMs = 1000) => {
     const i = steps.length;
     const pagePath = join(framesDir, `s${i}-page.png`);
     const panelPath = join(framesDir, `s${i}-panel.png`);
@@ -131,7 +131,7 @@ async function main() {
   });
   await fixture.bringToFront();
   await panel.waitForTimeout(300);
-  await snap('Matching items collapse to a slim bar — nothing deleted');
+  await snap('Matching items collapse to a slim bar — nothing deleted', 1350);
 
   // --- Step 5: stack a second filter ---
   await panel.fill('input[data-input="phrase"]', 'unpaid');
@@ -148,7 +148,7 @@ async function main() {
   await restoreBtn.click();
   await fixture.bringToFront();
   await panel.waitForTimeout(400);
-  await snap('Restore anything with one click — your filters stay saved', 2400);
+  await snap('Restore anything with one click — your filters stay saved', 1600);
 
   await writeFile(join(framesDir, 'steps.json'), JSON.stringify(steps, null, 2));
 
