@@ -107,7 +107,13 @@ async function registerForOrigin(origin: string): Promise<void> {
       id,
       matches: [originMatchPattern(origin)],
       js: [CONTENT_SCRIPT_FILE],
-      runAt: 'document_idle',
+      // document_end (DOMContentLoaded), NOT document_idle: idle waits for the
+      // window 'load' event, which on a heavy SPA (LinkedIn cold load measured
+      // at ~3.5s) fires long AFTER the job cards have rendered. Injecting at
+      // document_end + the content script's observer-first detection lets us
+      // filter cards the instant they're inserted, rather than waiting for the
+      // whole page (every sub-resource) to finish loading.
+      runAt: 'document_end',
       world: 'ISOLATED',
     },
   ]);

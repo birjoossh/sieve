@@ -488,12 +488,15 @@ async function attemptDiscover(opts: {
   }
 }
 
-/** Attempt LLM discovery with SPA-aware retry. YouTube / LinkedIn /
- *  Twitter hydrate well after document_idle, so a fixed back-off
- *  isn't enough. After the seeded delays we install a MutationObserver
- *  on document.body that re-tries detect() on each batch of new
- *  descendants — capped at a 60s total budget so an idle tab doesn't
- *  retain the observer indefinitely.
+/** Attempt discovery, observer-first. YouTube / LinkedIn / Twitter render
+ *  their list well after we inject (React hydration), so detection is driven
+ *  by a MutationObserver that mounts the instant the list's first cards
+ *  appear — and the per-item MutationWatcher then filters subsequent cards
+ *  incrementally as they stream in. We do ONE immediate attempt (the list may
+ *  already be present on a warm load / server-rendered page / SPA re-detect),
+ *  then install the observer right away rather than waiting out a fixed
+ *  back-off or the window 'load' event. The observer is capped at a 60s
+ *  budget so an idle tab doesn't retain it.
  *
  *  Re-entrant: rediscover() may call this while a previous run is in
  *  flight. We coalesce to one run via discoverState.inFlight. force:true
@@ -511,32 +514,28 @@ async function tryDiscover(
   if (discoverState.inFlight || discoverState.succeeded) return;
   discoverState.inFlight = true;
 
-  const delays = [0, 1_000, 3_000];
-  let lastError: unknown = null;
   try {
-    for (const wait of delays) {
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-      try {
-        if (await attemptDiscover(opts)) {
-          discoverState.succeeded = true;
-          return;
-        }
-      } catch (err) {
-        // A discovery error (e.g. the LLM returning a malformed schema
-        // before the SPA's real list has hydrated) must NOT abort the whole
-        // retry — on LinkedIn the site stub or local detection succeeds once
-        // the cards mount. Remember the error and keep trying; the watcher's
-        // 60s timeout surfaces it only if nothing ever works.
-        lastError = err;
+    try {
+      if (await attemptDiscover(opts)) {
+        discoverState.succeeded = true;
+        return;
       }
+    } catch (err) {
+      // A discovery error (e.g. the LLM returning a malformed schema before
+      // the SPA's real list has hydrated) must NOT abort the watch — on
+      // LinkedIn the site stub or local detection succeeds once the cards
+      // mount. The watcher keeps retrying; its 60s timeout surfaces the error
+      // only if nothing ever works.
+      void err;
     }
-    // Initial back-off exhausted without a detection. Watch for
-    // significant DOM mutations and retry on each.
+    // The list isn't here yet — watch for it. Installing the observer
+    // immediately (instead of after seeded [0,1s,3s] delays) is what lets a
+    // list that hydrates after injection get caught the instant its first
+    // cards land, rather than at the next coarse retry tick.
     installDiscoverWatcher(opts);
   } finally {
     discoverState.inFlight = false;
   }
-  void lastError; // surfaced by the watcher's give-up path, not here
 }
 
 function emitDiscoverError(err: unknown): void {
@@ -594,7 +593,12 @@ function installDiscoverWatcher(opts: {
       }
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  // document.body is present at document_end; fall back to documentElement
+  // defensively in case detection runs before <body> is parsed.
+  observer.observe(document.body ?? document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
   discoverState.mutationObserver = observer;
   // Cap the lifetime so we don't keep an observer running on idle pages.
   discoverState.giveUpTimer = setTimeout(() => {

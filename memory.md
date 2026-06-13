@@ -5,6 +5,31 @@ finding worth saving the next session a re-derivation goes here.
 
 ---
 
+## 2026-06-13 (perf fix) · inject at document_end + observer-first detection — filter cards as they load instead of waiting for window 'load'
+
+The content script registered at `document_idle`, which Chrome injects only
+after the window `load` event — and on a cold LinkedIn load `load` fires ~3.5s
+in, long after the 25 job cards are already in the DOM (measured: `init:start`
+@3451ms cold with items:25 already present). So we sat idle while the list was
+sitting there filterable.
+
+Two coupled changes:
+- sw.ts `registerForOrigin`: `runAt: 'document_idle'` → `'document_end'`
+  (DOMContentLoaded). Live: cold `init:start` dropped ~3.5s → ~2.3s.
+- index.ts `tryDiscover`: removed the cumulative seeded `[0,1s,3s]` retry loop
+  (attempts fired at 0/1s/4s — a list hydrating between 1-4s waited until 4s).
+  Now: one immediate attempt, then install the discover MutationObserver
+  RIGHT AWAY, so the list is caught the instant its first cards land and the
+  per-item MutationWatcher filters the rest incrementally. installDiscoverWatcher
+  observes `document.body ?? document.documentElement` (body present at
+  document_end; defensive fallback).
+
+Note: nothing asserts runAt in code — it's the single value at sw.ts:110
+(test/comment refs are stale prose, harmless). Regression guard:
+fixtures/late-hydration.html injects a `.joblist` ~1.2s post-load; 4.17 asserts
+detection < 3.5s (the old seeded path wouldn't retry until ~4s → would fail)
+and that the late list is filterable. Full suite 157.
+
 ## 2026-06-13 (perf fix) · the post-load filter "re-settle" was a redundant renderer rebuild on every ?currentJobId change; mount() is now idempotent
 
 Instrumented the pipeline (gated `tlog()` in content/index.ts, enable via
