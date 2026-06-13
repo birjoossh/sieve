@@ -151,6 +151,11 @@ body {
   font-size: 11px;
   line-height: 1.5;
 }
+.hint-muted {
+  margin-top: 6px;
+  font-style: italic;
+  opacity: 0.85;
+}
 
 /* Buttons ------------------------------------------------------------------ */
 .btn {

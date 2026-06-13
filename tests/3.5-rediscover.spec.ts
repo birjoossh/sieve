@@ -243,6 +243,60 @@ test.describe('3.5 — re-discover + hint', () => {
     }
   });
 
+  test('page-status: without an LLM key the hint is gated (input disabled, note shown, no hint forwarded)', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.goto('about:blank');
+      await page.addScriptTag({ path: TESTBED });
+      const result = await page.evaluate(async () => {
+        const nf = (window as unknown as { __nf: typeof window['__nf'] }).__nf;
+        const host = document.createElement('section');
+        document.body.appendChild(host);
+
+        interface Capture { hint?: string; force: true }
+        const captured: Capture[] = [];
+        nf.renderPageStatus(host, {
+          schema: {
+            fingerprint: 'fp',
+            layout: 'list',
+            itemSetSelector: '.joblist',
+            itemSelector: '.joblist > .job',
+            fields: { title: { kind: 'text', selector: '.title' } },
+            source: 'local',
+            discoveredAt: 0,
+          },
+          itemCount: 10,
+          llmConfigured: false,
+          onRediscover: (payload) => captured.push(payload),
+        });
+
+        const input = host.querySelector<HTMLInputElement>('[data-input="rediscover-hint"]');
+        const button = host.querySelector<HTMLButtonElement>('[data-action="rediscover"]');
+        const note = host.querySelector('[data-role="hint-needs-llm"]');
+        if (!input || !button) throw new Error('UI not rendered');
+
+        // Even if a hint string is forced into the disabled field, it must
+        // not be forwarded — there's no model to consume it.
+        input.value = 'job cards in the center column';
+        button.click();
+
+        return {
+          inputDisabled: input.disabled,
+          noteText: note?.textContent ?? null,
+          captured,
+        };
+      });
+
+      expect(result.inputDisabled).toBe(true);
+      expect(result.noteText).toContain('LLM key');
+      // Re-discover still fires (local re-detect), but with NO hint.
+      expect(result.captured).toEqual([{ force: true }]);
+    } finally {
+      await browser.close();
+    }
+  });
+
   test('page-status: Re-discover renders even with NO schema (enabled-but-undetected dead-end)', async () => {
     // The missing-schema error row tells the user to "Use Re-discover
     // (above)" — so the control must exist precisely when there is no

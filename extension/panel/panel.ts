@@ -753,6 +753,10 @@ function render(): void {
     renderPageStatus(pageHost, {
       schema: state.schema,
       itemCount: state.items.length,
+      // The hint only reaches a model on the LLM discovery path; gate the
+      // hint input on a configured key so it never silently drops the text.
+      llmConfigured:
+        state.llmSettings !== null && state.llmSettings.apiKey.trim() !== '',
       // Slice 3.5 + production wire-up: send rediscover to content,
       // which runs detect/distill/fetchSchema via SW and emits the
       // resulting pageDetected (or discoverError) push.
