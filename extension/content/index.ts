@@ -36,6 +36,23 @@ import {
 
 const LOG_PREFIX = '[sieve]';
 
+// Pipeline-timing probe (opt-in). Flip via `localStorage.setItem('nf-timing','1')`
+// in the page console; logs `[sieve-timing] <event> @<ms>` against a single
+// monotonic clock so the gap between "list painted", "mounted", and "filtered"
+// is directly readable. Zero cost when off. Not a shipping default.
+const TIMING_ON = (() => {
+  try {
+    return localStorage.getItem('nf-timing') === '1';
+  } catch {
+    return false;
+  }
+})();
+function tlog(event: string, extra?: Record<string, unknown>): void {
+  if (!TIMING_ON) return;
+  const suffix = extra ? ` ${JSON.stringify(extra)}` : '';
+  console.log(`[sieve-timing] ${event} @${Math.round(performance.now())}ms${suffix}`);
+}
+
 interface PageContext {
   schema: Schema;
   itemSet: Element;
@@ -99,6 +116,10 @@ async function hydrateSavedFilters(c: PageContext): Promise<void> {
     if (saved.length === 0) return;
     c.filters = saved;
     recompute(c);
+    tlog('hydrateSavedFilters:applied', {
+      filters: saved.length,
+      filtered: c.summaries.filter((s) => s.state === 'filtered').length,
+    });
     maybeScanDescriptions(c);
     // Re-emit pageDetected so an open panel re-pulls state and
     // reconciles its local mirrors (phrases / numeric / savedExists).
@@ -244,15 +265,38 @@ async function roundTripPing(): Promise<void> {
 }
 
 /** Mount the engine + renderer + watcher on a freshly discovered (or
- *  re-discovered) schema. Idempotent: tears down the previous ctx
- *  before installing a new one so re-discover with a different fp
- *  doesn't strand state. Filters + mode are carried over when the new
- *  fingerprint matches the previous one — that's the SPA-navigation
- *  case (same site, new search query) where the user expects their
- *  typed-but-unsaved phrases to keep filtering. A fingerprint change
- *  means the user is on a different layout, so filters tagged for the
- *  old shape are dropped. */
-function mount(schema: Schema, itemSet: Element): void {
+ *  re-discovered) schema. Tears down the previous ctx before installing a
+ *  new one so re-discover with a different fp doesn't strand state. Filters
+ *  + mode are carried over when the new fingerprint matches the previous
+ *  one — that's the SPA-navigation case (same site, new search query) where
+ *  the user expects their typed-but-unsaved phrases to keep filtering. A
+ *  fingerprint change means the user is on a different layout, so filters
+ *  tagged for the old shape are dropped.
+ *
+ *  `forceRemount` (only the panel's explicit Re-discover sets it) bypasses
+ *  the no-op guard below and always rebuilds. */
+function mount(schema: Schema, itemSet: Element, opts: { forceRemount?: boolean } = {}): void {
+  // No-op re-detect short-circuit. LinkedIn rewrites the URL on every job
+  // click (?currentJobId=…) and cosmetically post-load (%20→+); each fires
+  // an SPA route change → forced re-discover that lands right back on the
+  // SAME item-set element with the same fingerprint. Rebuilding the renderer
+  // there flickers the page and burns ~2s in a teardown/re-mount for nothing
+  // (measured live: filters applied at 2.31s, needlessly torn down + redone
+  // at 4.36s). When the live item-set and fingerprint are unchanged, keep the
+  // existing renderer + watcher — the watcher already tracks card changes —
+  // and return. A real new search REPLACES the container element, so the
+  // identity check fails and we rebuild as before.
+  if (
+    !opts.forceRemount &&
+    ctx !== null &&
+    ctx.itemSet === itemSet &&
+    itemSet.isConnected &&
+    ctx.schema.fingerprint === schema.fingerprint
+  ) {
+    tlog('mount:skip-unchanged', { fp: schema.fingerprint });
+    return;
+  }
+  tlog('mount:start', { fp: schema.fingerprint, source: schema.source });
   const carry =
     ctx && ctx.schema.fingerprint === schema.fingerprint
       ? { filters: ctx.filters, mode: ctx.mode }
@@ -303,7 +347,11 @@ function mount(schema: Schema, itemSet: Element): void {
       }, 150);
     },
   });
+  tlog('mount:items', { items: ctx.items.length, filters: ctx.filters.length });
   recompute(ctx);
+  tlog('mount:firstRecompute', {
+    filtered: ctx.summaries.filter((s) => s.state === 'filtered').length,
+  });
   pushToPanel({
     t: 'pageDetected',
     v: MESSAGE_VERSION,
@@ -393,12 +441,16 @@ async function attemptDiscover(opts: {
    *  force-routing into a doomed LLM call. */
   bypassStub?: boolean;
 }): Promise<boolean> {
+  // The panel's Re-discover is the only explicit "rebuild now" request; every
+  // other caller (initial load, SPA route change) lets mount() skip the
+  // rebuild when the item-set is unchanged.
+  const forceRemount = opts.bypassStub === true;
   if (opts.bypassStub !== true) {
     const stub = pickStubSchema();
     if (stub) {
       const stubItemSet = document.querySelector(stub.itemSetSelector);
       if (stubItemSet) {
-        mount(stub, stubItemSet);
+        mount(stub, stubItemSet, { forceRemount });
         return true;
       }
     }
@@ -414,7 +466,7 @@ async function attemptDiscover(opts: {
       discoverOpts,
     );
     if (!result) return false;
-    mount(result.schema, result.itemSet);
+    mount(result.schema, result.itemSet, { forceRemount });
     return true;
   } catch (err) {
     // The LLM round-trip failed (no key, "Failed to fetch", spend cap, or a
@@ -429,7 +481,7 @@ async function attemptDiscover(opts: {
           err instanceof Error ? err.message : String(err)
         }); using local detection.`,
       );
-      mount(local.schema, local.itemSet);
+      mount(local.schema, local.itemSet, { forceRemount });
       return true;
     }
     throw err;
@@ -586,9 +638,11 @@ let spaDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 function handleSpaUrlChange(): void {
   if (location.href === lastSpaUrl) return;
   lastSpaUrl = location.href;
+  tlog('spaUrlChange:queued', { href: location.href });
   if (spaDebounceTimer !== null) clearTimeout(spaDebounceTimer);
   spaDebounceTimer = setTimeout(() => {
     spaDebounceTimer = null;
+    tlog('spaUrlChange:fire-rediscover');
     console.log(`${LOG_PREFIX} url changed → re-detect (${location.href})`);
     // Reset the discover gate so tryDiscover() will re-run on the new URL.
     // Existing renderer + ctx for the previous URL are torn down inside
@@ -628,6 +682,7 @@ function init(): void {
     return;
   }
   w.__nfContentInitialized = true;
+  tlog('init:start');
 
   attachMessageBridge();
   installSpaNavigationWatcher();

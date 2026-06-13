@@ -5,6 +5,40 @@ finding worth saving the next session a re-derivation goes here.
 
 ---
 
+## 2026-06-13 (perf fix) · the post-load filter "re-settle" was a redundant renderer rebuild on every ?currentJobId change; mount() is now idempotent
+
+Instrumented the pipeline (gated `tlog()` in content/index.ts, enable via
+`localStorage 'nf-timing'='1'`; logs `[sieve-timing] <event> @<ms>` on one
+monotonic clock). Live measurement on the v2 search-results page, saved
+filters pre-seeded:
+
+  @2300ms init:start            ← document_idle (LinkedIn hydration; SITE time)
+  @2302ms mount:items {items:25}
+  @2311ms hydrateSavedFilters {filtered:2}   ← filters applied; OUR work = 11ms
+  @2486/@3158ms spaUrlChange:queued          ← LinkedIn rewrites URL twice
+  @4358ms spaUrlChange:fire-rediscover (1200ms debounce)
+  @4359ms mount:start  ← FULL teardown + rebuild, for nothing
+
+Root cause of the perceived delay: NOT detection (11ms) and NOT the
+`chrome-extension://invalid` flood (LinkedIn's, see below). It was mount()
+unconditionally tearing down + rebuilding the renderer on SPA route changes —
+and LinkedIn changes the URL on EVERY job click (`?currentJobId=…`), so the
+whole renderer was rebuilt on every interaction, ~2s after the page settled.
+
+Fix: mount() now early-returns when `ctx.itemSet === itemSet && itemSet
+.isConnected && same fingerprint` (no-op re-detect). The MutationWatcher
+already tracks card changes, so skipping the rebuild is safe; a real new
+search REPLACES the container element → identity check fails → rebuild as
+before. The panel's explicit Re-discover passes `forceRemount` (threaded from
+`attemptDiscover` via `opts.bypassStub === true`) to always rebuild. Regression
+guard in tests/4.11: tag `.filt` wrappers, pushState, assert all 3 survive
+(a rebuild would recreate them untagged). Full suite green (155).
+
+Latent, NOT yet fixed: the discover retry delays are cumulative [0,1s,4s] and
+the responsive MutationObserver only installs AFTER they exhaust at 4s — a list
+hydrating between 1-4s stalls to the 4s mark. Didn't bite here (stub matched at
+document_idle) but worth doing: install the observer immediately.
+
 ## 2026-06-12 (live debug) · LinkedIn's `chrome-extension://invalid` console flood is NOT ours; current build's filter path is ms-fast on the real collections page
 
 User reported "a barrage of errors" + "slow filter application" on

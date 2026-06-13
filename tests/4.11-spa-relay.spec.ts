@@ -29,6 +29,17 @@ test.describe('4.11 — SPA route change re-detects via SW relay', () => {
     await env.panel.click('button.phrase-add');
     await expect(env.fixture.locator('.sliver')).toHaveCount(3);
 
+    // Tag the live filtered wrappers. A no-op SPA URL change (same item-set,
+    // same fingerprint — LinkedIn does this on every ?currentJobId click)
+    // must NOT tear the renderer down and rebuild it: the wrappers below
+    // should be the SAME nodes afterwards, still carrying this marker. A
+    // rebuild would recreate them without it.
+    await env.fixture.evaluate(() => {
+      document
+        .querySelectorAll('.filt')
+        .forEach((el, i) => ((el as HTMLElement).dataset['nfProbe'] = String(i)));
+    });
+
     const redetect = env.fixture.waitForEvent('console', {
       predicate: (m) => m.text().includes('url changed → re-detect'),
       timeout: 10_000,
@@ -45,5 +56,13 @@ test.describe('4.11 — SPA route change re-detects via SW relay', () => {
     // round-trip.
     await expect(env.fixture.locator('.sliver')).toHaveCount(3);
     await expect(env.panel.locator('.chip[data-phrase="mandatory Mandarin"]')).toHaveCount(1);
+
+    // The no-op re-detect reused the existing renderer: all three tagged
+    // wrappers survive. (Before the idempotence guard, mount() unconditionally
+    // disconnected the renderer and rebuilt these as fresh, untagged nodes.)
+    const reusedWrappers = await env.fixture.evaluate(
+      () => document.querySelectorAll('.filt[data-nf-probe]').length,
+    );
+    expect(reusedWrappers).toBe(3);
   });
 });
